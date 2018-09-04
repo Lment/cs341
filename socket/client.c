@@ -117,15 +117,16 @@ int main(int argc, char *argv[]) {
         int total_send = 0;
         int total_recv = 0;
         int data_len = 0;
+        int eof_flag = 0;
         data = malloc(MAX_SIZE - 8);
         msg = malloc(MAX_SIZE);
         res = malloc(MAX_SIZE);
 
         while (data_len < MAX_SIZE - 16) {
             int cur_char = getchar();
-            if (first_char == EOF) {
+            if (cur_char == EOF) {
                 if (feof(stdin)) {
-                    if (data_len = 0) {
+                    if (data_len == 0) {
                         fprintf(stderr, "%s\n", "Reach EOF with zero data");
                         free(msg);
                         free(res);
@@ -134,7 +135,7 @@ int main(int argc, char *argv[]) {
                         return 0;
                     } else {
                         fprintf(stderr, "%s\n", "eof with some body");
-                        eof = 1;
+                        eof_flag = 1;
                         break;
                     }
                 }
@@ -144,7 +145,7 @@ int main(int argc, char *argv[]) {
                     free(msg);
                     free(res);
                     free(data);
-                    close(sock);
+                    close(sock_fd);
                     return -1;
                 }
             }
@@ -171,8 +172,8 @@ int main(int argc, char *argv[]) {
         memcpy(&msg[8], data, data_len);
 
         /* checksum */
-        int checksum = calc_checksum (uint8_t *msg, uint32_t length, char *data);
-        memcpy(&message[2], &checksum, 2);
+        int checksum = calc_checksum (msg, length, data);
+        memcpy(&msg[2], &checksum, 2);
 
         while (total_send < length) {
             if ((send_bytes = send(sock_fd, msg, (size_t)length, 0)) < 0) {
@@ -184,7 +185,7 @@ int main(int argc, char *argv[]) {
                 return -1;
             }
             total_send = total_send + send_bytes;
-            fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, raw_length, send_bytes, raw_length - total_send);
+            fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, length, send_bytes, length - total_send);
         }
 
         uint8_t *total_res = malloc(MAX_SIZE);
