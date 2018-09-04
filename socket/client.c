@@ -15,7 +15,7 @@
    2. create a socket and connect to a server
    3. send a message to the server
    4. receive the message from the server, check and parse the message
-*/
+ */
 
 uint16_t calc_checksum (uint8_t *msg, uint32_t length, char *data) {
     uint16_t *tmp = malloc(2);
@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
        --------------------------------
        |            length            |
        --------------------------------
-    */
+     */
 
     /* variables for message */
     uint8_t op;
@@ -56,10 +56,10 @@ int main(int argc, char *argv[]) {
     uint8_t *res;
     int send_bytes;
     int recv_bytes;
-    
+
     /* variables for socket api */
     int sock_fd;
-    char raw_srvr_addr[10];
+    char *raw_srvr_addr;
     struct sockaddr_in srvr_addr;
     uint16_t port;
 
@@ -68,36 +68,40 @@ int main(int argc, char *argv[]) {
 
     /* parse the command line
        ex. ./client -h 143.248.111.222 -p 1234 -o 0 -s 5
-    */
+     */
     while ((opt = getopt(argc, argv, "h:p:o:s:")) != -1) {
         switch (opt) {
             case 'h':
+                raw_srvr_addr = malloc(strlen(optarg));
                 memcpy(raw_srvr_addr, optarg, strlen(optarg));
                 break;
             case 'p':
-                port = atoi(optarg);
+                port = (uint16_t)atoi(optarg);
                 break;
             case 'o':
-                op = atoi(optarg);
+                op = (uint8_t)atoi(optarg);
                 break;
             case 's':
-                shift = atoi(optarg);
+                shift = (uint8_t)atoi(optarg);
+                break;
         }
     }
 
     /* create a socket and connect to a server */
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Fail to create socket\n");
+        //perror("Fail to create socket\n");
         return -1;
     } else {
         /* set server address */
         memset(&srvr_addr, 0, sizeof(srvr_addr));
         srvr_addr.sin_family = AF_INET;
         srvr_addr.sin_addr.s_addr = inet_addr(raw_srvr_addr);
+        //fprintf(stderr, "%s\n", raw_srvr_addr);
+        free(raw_srvr_addr);
         srvr_addr.sin_port = htobe16(port);
 
         if (connect(sock_fd, (struct sockaddr *)&srvr_addr, sizeof(srvr_addr)) < 0) {
-            perror("Fail to connect to server\n");
+            //perror("Fail to connect to server\n");
             return -1;
         }
     }
@@ -107,7 +111,7 @@ int main(int argc, char *argv[]) {
        2. add op, shift, checksum, and length to the data
        3. send to server
        4. receive the response
-    */
+     */
 
     while (1) {
         int total_send = 0;
@@ -116,7 +120,7 @@ int main(int argc, char *argv[]) {
         data = malloc(MAX_SIZE - 8);
         msg = malloc(MAX_SIZE);
         res = malloc(MAX_SIZE);
-        
+
         while (data_len < MAX_SIZE - 16) {
             int cur_char = getchar();
             if (first_char == EOF) {
@@ -154,7 +158,7 @@ int main(int argc, char *argv[]) {
            --------------------------------
            |        ordered_length        |
            --------------------------------
-        */
+         */
 
         memcpy(&msg[0], &op, 1);
         memcpy(&msg[1], &shift, 1);
@@ -163,13 +167,13 @@ int main(int argc, char *argv[]) {
         length = 8 + data_len;
         ordered_length = htobe32(length);
         memcpy(&msg[4], &length, 4);
-        
+
         memcpy(&msg[8], data, data_len);
-        
+
         /* checksum */
         int checksum = calc_checksum (uint8_t *msg, uint32_t length, char *data);
         memcpy(&message[2], &checksum, 2);
-    
+
         while (total_send < length) {
             if ((send_bytes = send(sock_fd, msg, (size_t)length, 0)) < 0) {
                 perror("Fail to send message\b");
@@ -197,5 +201,5 @@ int main(int argc, char *argv[]) {
             memcpy(&total_res[total_recv], res, recv_bytes);
             total_recv = total_recv + recv_bytes;
         }
-
-        
+    }
+}
