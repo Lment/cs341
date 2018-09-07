@@ -17,13 +17,13 @@
    4. receive the message from the server, check and parse the message
  */
 
-uint16_t calc_checksum (uint8_t *msg, uint32_t length, char *data) {
+int calc_checksum (uint8_t *msg, uint32_t length) {
     uint16_t *tmp = malloc(2);
     int checksum = 0;
     memset(&msg[length], 0, 1);
     for (int i = 0;i < length;i = i + 2) {
         int carry = 0;
-        memcpy(tmp, data + i, 2);
+        memcpy(tmp, msg + i, 2);
         checksum = checksum + (int)*tmp;
         carry = checksum & 0x10000;
         checksum = checksum & 0xFFFF;
@@ -32,7 +32,6 @@ uint16_t calc_checksum (uint8_t *msg, uint32_t length, char *data) {
         }
     }
     free(tmp);
-    checksum = (uint16_t)(~checksum);
     return checksum;
 }
 
@@ -121,27 +120,26 @@ int main(int argc, char *argv[]) {
         data = malloc(MAX_SIZE - 8);
         msg = malloc(MAX_SIZE);
         res = malloc(MAX_SIZE);
-
-        while (data_len < MAX_SIZE - 16) {
+        while (data_len < MAX_SIZE - 8) {
             int cur_char = getchar();
             if (cur_char == EOF) {
                 if (feof(stdin)) {
                     if (data_len == 0) {
-                        fprintf(stderr, "%s\n", "Reach EOF with zero data");
+                        //fprintf(stderr, "%s\n", "Reach EOF with zero data");
                         free(msg);
                         free(res);
                         free(data);
                         close(sock_fd);
                         return 0;
                     } else {
-                        fprintf(stderr, "%s\n", "eof with some body");
+                        //fprintf(stderr, "%s\n", "eof with some body");
                         eof_flag = 1;
                         break;
                     }
                 }
 
                 if (ferror(stdin)) {
-                    perror("Fail to get body from stdin\n");
+                    //perror("Fail to get body from stdin\n");
                     free(msg);
                     free(res);
                     free(data);
@@ -167,17 +165,18 @@ int main(int argc, char *argv[]) {
 
         length = 8 + data_len;
         ordered_length = htobe32(length);
-        memcpy(&msg[4], &length, 4);
+        memcpy(&msg[4], &ordered_length, 4);
 
         memcpy(&msg[8], data, data_len);
 
         /* checksum */
-        int checksum = calc_checksum (msg, length, data);
-        memcpy(&msg[2], &checksum, 2);
+        int checksum = calc_checksum (msg, length);
+        checksum = (~checksum);
+            memcpy(&msg[2], &checksum, 2);
 
         while (total_send < length) {
             if ((send_bytes = send(sock_fd, msg, (size_t)length, 0)) < 0) {
-                perror("Fail to send message\b");
+                //perror("Fail to send message\b");
                 free(msg);
                 free(res);
                 free(data);
@@ -185,16 +184,17 @@ int main(int argc, char *argv[]) {
                 return -1;
             }
             total_send = total_send + send_bytes;
-            fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, length, send_bytes, length - total_send);
+            //fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, length, send_bytes, length - total_send);
         }
 
         uint8_t *total_res = malloc(MAX_SIZE);
 
         while (total_recv < total_send) {
             if ((recv_bytes = recv(sock_fd, res, (size_t)length, 0)) < 0) {
-                perror("Fail to receive message\n");
+                //perror("Fail to receive message\n");
                 free(msg);
                 free(res);
+                free(total_res);
                 free(data);
                 close(sock_fd);
                 return -1;
@@ -202,5 +202,35 @@ int main(int argc, char *argv[]) {
             memcpy(&total_res[total_recv], res, recv_bytes);
             total_recv = total_recv + recv_bytes;
         }
+
+        memset(&total_res[total_recv], 0, 3);
+        int recv_checksum = calc_checksum (total_res, total_recv);
+        if (recv_checksum - 0xFFFF) {
+            free(msg);
+            free(res);
+            free(total_res);
+            free(data);
+            close(sock_fd);
+            return -1;
+        }
+
+        for (int i = 0;i < total_recv - 8;i++) {
+            printf("%c", total_res[8 + i]);
+        }
+
+        free(msg);
+        free(res);
+        free(total_res);
+        free(data);
+
+        if (eof_flag) {
+            break;
+        }
+
     }
+
+    close(sock_fd);
+
+    return 0;   
+
 }
