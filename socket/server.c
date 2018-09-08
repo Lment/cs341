@@ -245,15 +245,14 @@ int main(int argc, char *argv[]) {
                     }
                     total_send = total_send + send_bytes;
                 }
-
-                free(recv_d);
-                free(final_recv);
-                free(data);
-                free(ciphered_data);
-                free(msg);
-                close(cli_sock_fd);
-                return 0;
-                }
+            }
+            free(recv_d);
+            free(final_recv);
+            free(data);
+            free(ciphered_data);
+            free(msg);
+            close(cli_sock_fd);
+            return 0;
         } else {
             close(cli_sock_fd);
         }
