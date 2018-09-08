@@ -88,19 +88,19 @@ int main(int argc, char *argv[]) {
 
     /* create a socket and connect to a server */
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        //perror("Fail to create socket\n");
+        perror("Fail to create socket\n");
         return -1;
     } else {
         /* set server address */
         memset(&srvr_addr, 0, sizeof(srvr_addr));
         srvr_addr.sin_family = AF_INET;
         srvr_addr.sin_addr.s_addr = inet_addr(raw_srvr_addr);
-        //fprintf(stderr, "%s\n", raw_srvr_addr);
+        fprintf(stderr, "%s\n", raw_srvr_addr);
         free(raw_srvr_addr);
         srvr_addr.sin_port = htobe16(port);
 
         if (connect(sock_fd, (struct sockaddr *)&srvr_addr, sizeof(srvr_addr)) < 0) {
-            //perror("Fail to connect to server\n");
+            perror("Fail to connect to server\n");
             return -1;
         }
     }
@@ -111,7 +111,6 @@ int main(int argc, char *argv[]) {
        3. send to server
        4. receive the response
      */
-
     while (1) {
         int total_send = 0;
         int total_recv = 0;
@@ -125,21 +124,21 @@ int main(int argc, char *argv[]) {
             if (cur_char == EOF) {
                 if (feof(stdin)) {
                     if (data_len == 0) {
-                        //fprintf(stderr, "%s\n", "Reach EOF with zero data");
+                        fprintf(stderr, "%s\n", "Reach EOF with zero data");
                         free(msg);
                         free(res);
                         free(data);
                         close(sock_fd);
                         return 0;
                     } else {
-                        //fprintf(stderr, "%s\n", "eof with some body");
+                        fprintf(stderr, "%s\n", "eof with some body");
                         eof_flag = 1;
                         break;
                     }
                 }
 
                 if (ferror(stdin)) {
-                    //perror("Fail to get body from stdin\n");
+                    perror("Fail to get body from stdin\n");
                     free(msg);
                     free(res);
                     free(data);
@@ -173,10 +172,10 @@ int main(int argc, char *argv[]) {
         int checksum = calc_checksum (msg, length);
         checksum = (~checksum);
             memcpy(&msg[2], &checksum, 2);
-
+ 
         while (total_send < length) {
             if ((send_bytes = send(sock_fd, msg, (size_t)length, 0)) < 0) {
-                //perror("Fail to send message\b");
+                perror("Fail to send message\b");
                 free(msg);
                 free(res);
                 free(data);
@@ -184,14 +183,16 @@ int main(int argc, char *argv[]) {
                 return -1;
             }
             total_send = total_send + send_bytes;
-            //fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, length, send_bytes, length - total_send);
+            fprintf(stderr,"total: %d/%d, send: %d, left: %d\n", total_send, length, send_bytes, length - total_send);
         }
-
+ 
         uint8_t *total_res = malloc(MAX_SIZE);
-
+ 
         while (total_recv < total_send) {
+                 fprintf(stderr, "%d\n", total_recv);
+ 
             if ((recv_bytes = recv(sock_fd, res, (size_t)length, 0)) < 0) {
-                //perror("Fail to receive message\n");
+                perror("Fail to receive message\n");
                 free(msg);
                 free(res);
                 free(total_res);
@@ -199,10 +200,13 @@ int main(int argc, char *argv[]) {
                 close(sock_fd);
                 return -1;
             }
+ 
             memcpy(&total_res[total_recv], res, recv_bytes);
             total_recv = total_recv + recv_bytes;
+            fprintf(stderr,"total: %d/%d, recv: %d, left: %d\n", total_recv, length, recv_bytes, total_send - total_recv);
+ 
         }
-
+ 
         memset(&total_res[total_recv], 0, 3);
         int recv_checksum = calc_checksum (total_res, total_recv);
         if (recv_checksum - 0xFFFF) {
