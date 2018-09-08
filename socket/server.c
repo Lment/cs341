@@ -32,12 +32,52 @@ int calc_checksum (uint8_t *msg, uint32_t length) {
     return checksum;
 }
 
+int abc_check(char c) {
+    if ('A' <= c && c <= 'Z') {
+        return 1;
+    }
+    if ('a' <= c && c <='z') {
+        return 1;
+    }
+    return 0;
+}
+
+char enc(char c, int shift) {
+    char abc[27] = "abcdefghijklmnopqrstuvwxyz";
+    int s = shift;
+    int no, new;
+
+    while (s < 0) {
+        s = s + 26;
+    }
+
+    s = s % 26;
+
+    for (int i = 0;i < 26;i++) {
+        if (c == abc[i]) {
+            no = i;
+        }
+    }
+
+    new = no + s;
+
+    new = new % 26;
+
+    return abc[new];
+}
+
+char dec(char c, int shift) {
+    int s = 0 - shift;
+    char result = enc(c, s);
+    return result;
+}
+
 /* 1. create a new server socket
    2. bind the socket with port number and IP address
    3. listen()
    4. accept client
    5. read/write
-*/ 
+ */ 
 
 int main(int argc, char *argv[]) {
     /* header structure
@@ -47,7 +87,7 @@ int main(int argc, char *argv[]) {
        --------------------------------
        |            length            |
        --------------------------------
-    */
+     */
 
     int opt;
     uint16_t port;
@@ -66,13 +106,13 @@ int main(int argc, char *argv[]) {
     int send_bytes = -1;
 
     int pid;
-    
+
     while ((opt = getopt(argc, argv, "p:")) != -1) {
         switch (opt) {
             case 'p':
                 port = atoi(optarg);
                 break;
-            }
+        }
     }
 
     if ((svr_sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -140,20 +180,85 @@ int main(int argc, char *argv[]) {
                     }
                     memcpy(&final_recv[total_recv], recv_d, recv_bytes);
                     total_recv = total_recv + recv_bytes;
-                    
+
                     if (total_recv >= 8) {
                         if ((length = be32toh(*(uint32_t *)(&final_recv[4]))) == total_recv) {
                             break;
                         }
                     }
                 }
- 
+
                 op = ntohs(*(uint8_t *)(&final_recv[0]));
-                shift = (int)*(uint8_t *)(&final_recv[2]);
+                shift = (int)*(uint8_t *)(&final_recv[1]);
                 fprintf(stderr, "op is %d\n", op);
                 fprintf(stderr, "shift is %d\n", shift);
-            }
+
+                memset(&final_recv[total_recv], 0, 3);
+                int checksum_recv = calc_checksum(final_recv, total_recv);
+                if (checksum_recv - 0xFFFF) {
+                    free(recv_d);
+                    free(final_recv);
+                    free(data);
+                    free(ciphered_data);
+                    free(msg);
+                    close(cli_sock_fd);
+                    return -1;
+                }
+
+                memcpy(&msg[0], &final_recv[0], 1);
+                memcpy(&msg[1], &final_recv[1], 1);
+                memset(&msg[2], 0, 2);
+                memcpy(&msg[4], &final_recv[4], 4);
+                memcpy(data, &final_recv[8], length - 8);
+
+                if (op) { //dec
+                    for (int i = 0;i < length - 8;i++) {
+                        if (abc_check(data[i])) {
+                            ciphered_data[i] = dec((char)tolower(data[i]), shift);
+                        } else {
+                            ciphered_data[i] = data[i];
+                        }
+                    }
+                } else { //enc
+                    for (int i = 0;i < length - 8;i++) {
+                        if (abc_check(data[i])) {
+                            ciphered_data[i] = dec((char)tolower(data[i]), shift);
+                        } else {
+                            ciphered_data[i] = data[i];
+                        }
+                    }
+                }
+                memcpy(&msg[8], ciphered_data, length - 8);
+                int checksum_send = calc_checksum (msg, length);
+                checksum_send = (~checksum_send);
+                memcpy(&msg[2], &checksum_send, 2);
+
+                while (total_send < total_recv) {
+                    if ((send_bytes = send(cli_sock_fd, msg, (size_t)total_recv, 0)) == -1) {
+                        free(recv_d);
+                        free(final_recv);
+                        free(data);
+                        free(ciphered_data);
+                        free(msg);
+                        close(cli_sock_fd);
+                        return -1;
+                    }
+                    total_send = total_send + send_bytes;
+                }
+
+                free(recv_d);
+                free(final_recv);
+                free(data);
+                free(ciphered_data);
+                free(msg);
+                close(cli_sock_fd);
+                return 0;
+                }
+        } else {
+            close(cli_sock_fd);
         }
     }
-
+    close(svr_sock_fd);
+    return 0;
 }
+
