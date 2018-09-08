@@ -211,7 +211,7 @@ int main(int argc, char *argv[]) {
                 memcpy(&msg[4], &final_recv[4], 4);
                 memcpy(data, &final_recv[8], length - 8);
 
-                if (op) { //dec
+                if (!op) { //dec
                     for (int i = 0;i < length - 8;i++) {
                         if (abc_check(data[i])) {
                             ciphered_data[i] = dec((char)tolower(data[i]), shift);
