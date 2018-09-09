@@ -40,7 +40,5 @@ test-client-laggy : client
 	 ./client -h 143.248.56.16 -p 5003 -o 1 -s 5 < test-cases-updated/test-vector/20MB.txt > result.txt
 	 diff result.txt test-cases-updated/test-results_dec/20MB_dec.txt
 
-# test-server: server
-
 clean: client server
 	rm client server
