@@ -2,13 +2,16 @@ CC = gcc
 
 CFLAGS = -Wall
 
-all: server client
+all: server client server_select
 
 client : client.c
 	$(CC) $(CFLAGS)  -o client client.c
 
 server : server.c
 	$(CC) $(CFLAGS) -o server server.c
+
+server_select : server_select.c
+	$(CC) $(CFLAGS) -o server_select server.c
 
 test-client : test-client-normal test-client-laggy
 
@@ -40,5 +43,5 @@ test-client-laggy : client
 	 ./client -h 143.248.56.16 -p 5003 -o 1 -s 5 < test-cases-updated/test-vector/20MB.txt > result.txt
 	 diff result.txt test-cases-updated/test-results_dec/20MB_dec.txt
 
-clean: client server
-	rm client server
+clean: client server server_select
+	rm client server server_select
