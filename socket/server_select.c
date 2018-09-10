@@ -8,15 +8,20 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 
 #define MAX_SIZE 10 * 1000 * 1000 // 10MB
 #define MAX_DATA 10 * 1000 * 1000 - 8 // 10MB - 8(Header size)
 #define CARRY 0x10000
 #define CAPTURE 0xFFFF
+#define FD_SETSIZE 128
 
 /* References
-   basic usage of socket api functions are referenced from
+   usage of socket api functions are **mostly** referenced from
    https://beej.us/guide/bgnet/html/single/bgnet.html
+   http://ospace.tistory.com/147
+   usage of getaddrinfo is referenced from
+   https://www.joinc.co.kr/w/man/3/getaddrinfo
    multiple connection lines are referenced from
    http://www.tutorialspoint.com/unix_sockets/socket_server_example.htm
    http://forum.falinux.com/zbxe/index.php?mid=C_LIB&document_srl=438304
@@ -124,7 +129,6 @@ int main(int argc, char *argv[]) {
     uint16_t port; // Save port from command line
     int svr_sock_fd; // Socket file descriptor
     int cli_sock_fd; // Socket file descriptor for connection
-    struct sockaddr_in svr_addr;
     struct sockaddr_in cli_addr; //
     uint32_t cli_addr_size; // Variable for accept function
     uint8_t *recv_d; // Received data
@@ -136,16 +140,16 @@ int main(int argc, char *argv[]) {
     int send_bytes = -1; // Byte received
     int pid; // pid
 
-    fd_set master; // Master file descriptor list
-    fd_set read_fds; // Temp file descriptor list for select()
-    int fdmax; // Maximum file descriptor number
-    int yes = 1; // For setsockopt() SO_REUSEADDR, below
+    // select implementation
+    fd_set master;
+    fd_set read_fds;
+    FD_ZERO(&master); // initialize
+    FD_ZERO(&read_fds); // initialize
+    int fd_max;
+    int new_fd;
+    int yes = 1;
     int i, j, rv;
-
-    struct addrinfo hints, *ai, *p;
-
-    FD_ZERO(&master); // clear the master and temp sets
-    FD_ZERO(&read_fds);
+    struct addrinfo svr_addr, *ai, *p;
     
 
 
@@ -163,49 +167,44 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; //AF_INET?
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    if ((rv = getaddrinfo(NULL, htobe16(port), &hints, &ai)) != 0) {
-        fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
-        exit(1);
+    memset(&svr_addr, 0, sizeof(svr_addr));
+    svr_addr.ai_family = AF_INET;
+    svr_addr.ai_socktype = SOCK_STREAM;
+    svr_addr.ai_flags = AI_PASSIVE;
+    if ((rv = getaddrinfo(NULL, htobe16(port), &svr_addr, &ai)) != 0) {
+        return -1;
     }
     for (p = ai;p != NULL;p = p->ai_next) {
-        svr_sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (svr_sock_fd < 0) {
+        if ((svr_sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) {
             continue;
         }
-    
         setsockopt(svr_sock_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-
         if (bind(svr_sock_fd, p->ai_addr, p->ai_addrlen) < 0) {
+            //perror("Bind failed\n");
             close(svr_sock_fd);
             continue;
         }
-    
         break;
     }
 
 
-    // If we got here, it means we didn't get bound
     if (p == NULL) {
-        fprintf(stderr, "selecttserver: failed to bind\n");
-        exit(2);
+        //perror("Nothing to bind\n");
+        return -1;
     }
     
     freeaddrinfo(ai); // all done with this
 
     if (listen(svr_sock_fd, 100) < 0) {
-        perror("Listen failed\n");
-        exit(3);
+        // perror("Listen failed\n");
+        return -1;
     }
     
     // add the svr_sock_fd to the amster set
     FD_SET(svr_sock_fd, &master);
 
     // Keep track of the biggest file descriptor
-    fdmax = svr_sock_fd; // so far, it's this one
+    fd_max = svr_sock_fd; // so far, it's this one
 
     /* ----------
        ||Part B||
@@ -213,32 +212,26 @@ int main(int argc, char *argv[]) {
     */
 
     while (1) {
-        read_fds = master; // Copy it
-
-        if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1) {
-            perror("Select failed\n");
-            exit(4);
+        read_fds = master;
+        if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) < 0) {
+            //perror("Select failed\n");
+            return -1;
         }
         
-        // Run through the existing connections looking for data to read
-        for (i = 0;i <= fdmax;i++) {
-            if (FD_ISSET(i, &read_fds)) { // We got one!!
+        for (i = 0;i <= fd_max;i++) {
+            if (FD_ISSET(i, &read_fds)) {
                 if (i == svr_sock_fd) {
-                    // Handle new connections
                     cli_addr_size = sizeof(cli_addr);
-                    newfd = accept(svr_sock_fd,
-                        (struct sockaddr *)&cli_addr,
-                        &cli_addr_size);
-            
-                    if (newfd == -1) {
-                        perror("Accept failed\n");
+                    if ((new_fd = accept(svr_sock_fd, (struct sockaddr *)&cli_addr, &cli_addr_size)) < 0) {
+                        //perror("Accept failed\n");
                     } else {
-                        FD_SET(newfd, &master); // Add to master set
-                        if (newfd > fdmax) { // Keep track of the max
-                            fdmax = newfd;
+                        FD_SET(new_fd, &master); // Add to master set
+                        if (new_fd > fd_max) { // Keep track of the max
+                            fd_max = new_fd;
                         }
                     }
                 } else {
+                    // Data handling, identical to server.c
                     while (1) {
                         int total_recv = 0;
                         int total_send = 0;
