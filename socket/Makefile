@@ -2,13 +2,16 @@ CC = gcc
 
 CFLAGS = -Wall
 
-all: server client
+all: server client server_select
 
 client : client.c
 	$(CC) $(CFLAGS)  -o client client.c
 
 server : server.c
 	$(CC) $(CFLAGS) -o server server.c
+
+server_select : server_select.c
+	$(CC) $(CFLAGS) -o server_select server.c
 
 test-client : test-client-normal test-client-laggy
 
