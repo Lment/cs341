@@ -129,6 +129,7 @@ int main(int argc, char *argv[]) {
     uint16_t port; // Save port from command line
     int svr_sock_fd; // Socket file descriptor
     int cli_sock_fd; // Socket file descriptor for connection
+    struct sockaddr_in svr_addr;
     struct sockaddr_in cli_addr; //
     uint32_t cli_addr_size; // Variable for accept function
     uint8_t *recv_d; // Received data
@@ -148,11 +149,9 @@ int main(int argc, char *argv[]) {
     int fd_max;
     int new_fd;
     int yes = 1;
-    int i, j, rv;
-    struct addrinfo svr_addr, *ai, *p;
+    int i, j;
+    //struct addrinfo svr_addr, *ai, *p;
     
-
-
      /* ----------
        ||Part A||
        ----------
@@ -166,12 +165,12 @@ int main(int argc, char *argv[]) {
                 break;
         }
     }
-
+/*
     memset(&svr_addr, 0, sizeof(svr_addr));
     svr_addr.ai_family = AF_INET;
     svr_addr.ai_socktype = SOCK_STREAM;
     svr_addr.ai_flags = AI_PASSIVE;
-    if ((rv = getaddrinfo(NULL, htobe16(port), &svr_addr, &ai)) != 0) {
+    if (getaddrinfo(NULL, htobe16(port), &svr_addr, &ai) != 0) {
         return -1;
     }
     for (p = ai;p != NULL;p = p->ai_next) {
@@ -199,6 +198,29 @@ int main(int argc, char *argv[]) {
         // perror("Listen failed\n");
         return -1;
     }
+*/
+
+    // Create a socket
+    if ((svr_sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        // perror("Socket failed\n");
+        return -1;
+    } else {
+        memset(&svr_addr, 0, sizeof(svr_addr));
+        svr_addr.sin_family = AF_INET;
+        svr_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        svr_addr.sin_port = htobe16(port);
+
+        if (bind(svr_sock_fd, (struct sockaddr *)&svr_addr, sizeof(svr_addr)) < 0) {
+            // perror("Bind failed\n");
+            return -1;
+        }
+
+        if (listen(svr_sock_fd, 100) < 0) {
+            // perror("Listen failed\n");
+            return -1;
+        }
+    }
+
     
     // add the svr_sock_fd to the amster set
     FD_SET(svr_sock_fd, &master);
