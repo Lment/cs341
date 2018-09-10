@@ -17,8 +17,8 @@
 #define FD_SETSIZE 128
 
 /* References
-   usage of socket api functions are **mostly** referenced from
-   https://beej.us/guide/bgnet/html/single/bgnet.html
+   usage of select functions are **mostly** referenced from
+   https://beej.us/guide/bgnet/html/single/bgnet.html#select
    http://ospace.tistory.com/147
    usage of getaddrinfo is referenced from
    https://www.joinc.co.kr/w/man/3/getaddrinfo
@@ -148,8 +148,6 @@ int main(int argc, char *argv[]) {
     FD_ZERO(&read_fds); // initialize
     int fd_max;
     int new_fd;
-    int yes = 1;
-    int i, j;
     //struct addrinfo svr_addr, *ai, *p;
     
      /* ----------
@@ -165,7 +163,7 @@ int main(int argc, char *argv[]) {
                 break;
         }
     }
-/*
+/*  Check validity with lines from https://beej.us/guide/bgnet/html/single/bgnet.html#select
     memset(&svr_addr, 0, sizeof(svr_addr));
     svr_addr.ai_family = AF_INET;
     svr_addr.ai_socktype = SOCK_STREAM;
@@ -221,34 +219,31 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    
-    // add the svr_sock_fd to the amster set
     FD_SET(svr_sock_fd, &master);
-
-    // Keep track of the biggest file descriptor
-    fd_max = svr_sock_fd; // so far, it's this one
+    fd_max = svr_sock_fd;
 
     /* ----------
        ||Part B||
        ----------
     */
-
+    
     while (1) {
         read_fds = master;
+
         if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) < 0) {
             //perror("Select failed\n");
             return -1;
         }
         
-        for (i = 0;i <= fd_max;i++) {
-            if (FD_ISSET(i, &read_fds)) {
-                if (i == svr_sock_fd) {
+        for (int sock_fd= 0;i <= fd_max;sock_fd++) {
+            if (FD_ISSET(sock_fd, &read_fds)) {
+                if (sock_fd == svr_sock_fd) {
                     cli_addr_size = sizeof(cli_addr);
                     if ((new_fd = accept(svr_sock_fd, (struct sockaddr *)&cli_addr, &cli_addr_size)) < 0) {
                         //perror("Accept failed\n");
                     } else {
-                        FD_SET(new_fd, &master); // Add to master set
-                        if (new_fd > fd_max) { // Keep track of the max
+                        FD_SET(new_fd, &master);
+                        if (new_fd > fd_max) {
                             fd_max = new_fd;
                         }
                     }
