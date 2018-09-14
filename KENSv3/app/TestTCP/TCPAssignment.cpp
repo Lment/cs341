@@ -41,16 +41,27 @@ void TCPAssignment::finalize()
 
 }
 
-void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int, int) {}
+// syscall_socket: 
+void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
+    int new_fd = createFileDescriptor(pid);
+    returnSystemCall(syscallUUID, new_fd);
+    return;
+}
+
+// syscall_close: remove file descriptor and return system call
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-    // syscall_close: remove file descriptor and return system call
     removeFileDescriptor(pid, fd);
     returnSystemCall(syscallUUID, 0);
     return;
-    
 }
-void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int, struct sockaddr *, socklen_t) {}
-void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int, struct sockaddr *, socklen_t*) {}
+
+// syscall_bind: 
+void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+}
+
+// syscall_getsockname: 
+void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t*addrlen) {
+}
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {

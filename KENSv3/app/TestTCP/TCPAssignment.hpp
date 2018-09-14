@@ -37,6 +37,10 @@ public:
 protected:
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
+    virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
+    virtual void syscall_close(UUID syscallUUID, int pid, int fd);
+    virtual void syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen);
+    virtual void syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen);
 };
 
 class TCPAssignmentProvider
