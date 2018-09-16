@@ -95,7 +95,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
         return;
      }
 
-    for (auto iter = bind_list.begin();iter != bind_list.end();++iter) {
+    for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (is_addr_same(*addr, (struct sockaddr)iter->second)) {
             returnSystemCall(syscallUUID, -1);
             return;
@@ -107,7 +107,20 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
 }
 
 void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t*addrlen) {
+    struct PidFd pidfd;
+    pidfd.pid = pid;
+    pidfd.fd = fd;
 
+    auto iter = bind_list.find(pidfd);
+
+    if (iter == bind_list.end()) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    }
+
+    memcpy(addr, &iter->second, sizeof(sockaddr));
+    returnSystemCall(syscallUUID, 0);
+    return;
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
