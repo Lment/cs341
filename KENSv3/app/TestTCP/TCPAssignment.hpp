@@ -19,11 +19,6 @@
 
 #include <E/E_TimerModule.hpp>
 
-/* Reference
-   https://github.com/strollkim/cs341_old/KENSv3
-   (My private github repository used in Fall, 2017 for the same class, I will provide the access right if required) 
-*/
-
 struct PidFd {
     int pid;
     int fd;

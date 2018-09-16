@@ -42,8 +42,7 @@ void TCPAssignment::finalize()
 }
 
 bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2) {
-    // if same return 1 (true)
-    // else return 0 (false)
+    // if same return true, else return false
     struct sockaddr_in left = *(struct sockaddr_in *)&addr_1;
     struct sockaddr_in right = *(struct sockaddr_in *)&addr_2;
     if (left.sin_addr.s_addr == right.sin_addr.s_addr ||
@@ -95,12 +94,14 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
         return;
      }
 
+    // iterate through map and check if bind rules are violated
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (is_addr_same(*addr, (struct sockaddr)iter->second)) {
             returnSystemCall(syscallUUID, -1);
             return;
         }
     }
+
     bind_list.insert(std::make_pair(pidfd, *addr));
     returnSystemCall(syscallUUID, 0);
     return;
