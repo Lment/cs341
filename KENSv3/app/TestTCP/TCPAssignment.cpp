@@ -70,14 +70,11 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
     auto iter = bind_list.find(pidfd);
 
-    if (iter == bind_list.end()) {
-        returnSystemCall(syscallUUID, -1);
-        return;
-    } else {
+    if (iter != bind_list.end()) {
         bind_list.erase(iter);
-        returnSystemCall(syscallUUID, 0);
     }
 
+    returnSystemCall(syscallUUID, 0);
     return;
 }
 
