@@ -41,26 +41,73 @@ void TCPAssignment::finalize()
 
 }
 
-// syscall_socket: 
+bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2) {
+    // if same return 1 (true)
+    // else return 0 (false)
+    struct sockaddr_in left = *(struct sockaddr_in *)&addr_1;
+    struct sockaddr_in right = *(struct sockaddr_in *)&addr_2;
+    if (left.sin_addr.s_addr == right.sin_addr.s_addr ||
+        left.sin_addr.s_addr == INADDR_ANY ||
+        right.sin_addr.s_addr == INADDR_ANY) {
+        if (left.sin_port == right.sin_port) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
     int new_fd = createFileDescriptor(pid);
     returnSystemCall(syscallUUID, new_fd);
     return;
 }
 
-// syscall_close: remove file descriptor and return system call
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
     removeFileDescriptor(pid, fd);
+
+    struct PidFd pidfd;
+    pidfd.pid = pid;
+    pidfd.fd = fd;
+
+    auto iter = bind_list.find(pidfd);
+
+    if (iter == bind_list.end()) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    } else {
+        bind_list.erase(iter);
+        returnSystemCall(syscallUUID, 0);
+    }
+
+    return;
+}
+
+void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+    struct PidFd pidfd;
+    pidfd.pid = pid;
+    pidfd.fd = fd;
+    
+    auto iter = bind_list.find(pidfd);
+
+    // check if the fd is already in the bind_list
+     if (iter != bind_list.end()) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+     }
+
+    for (auto iter = bind_list.begin();iter != bind_list.end();++iter) {
+        if (is_addr_same(*addr, (struct sockaddr)iter->second)) {
+            returnSystemCall(syscallUUID, -1);
+            return;
+        }
+    }
+    bind_list.insert(std::make_pair(pidfd, *addr));
     returnSystemCall(syscallUUID, 0);
     return;
 }
 
-// syscall_bind: 
-void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
-}
-
-// syscall_getsockname: 
 void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t*addrlen) {
+
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)

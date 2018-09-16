@@ -19,6 +19,22 @@
 
 #include <E/E_TimerModule.hpp>
 
+/* Reference
+   https://github.com/strollkim/cs341_old/KENSv3
+   (My private github repository used in Fall, 2017 for the same class, I will provide the access right if required) 
+*/
+
+struct PidFd {
+    int pid;
+    int fd;
+    bool operator<(const PidFd& pidfd) const{
+        return ((this->fd != pidfd.fd)|| (this->pid != pidfd.pid));
+    }
+    bool operator==(const PidFd& pidfd) const{
+        return ((this->pid == pidfd.pid) && (this->fd == pidfd.fd));
+    } 
+};
+
 namespace E
 {
 
@@ -35,8 +51,10 @@ public:
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
+    std::map<struct PidFd, struct sockaddr> bind_list;
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
+    virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
     virtual void syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen);
