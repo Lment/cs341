@@ -93,13 +93,15 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
 
     // iterate through map and check if bind rules are violated
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
-        if (is_addr_same(*addr, (struct sockaddr)iter->second)) {
+        if (is_addr_same(*addr, *(struct sockaddr *)&iter->second.src_addr)) {
             returnSystemCall(syscallUUID, -1);
             return;
         }
     }
 
-    bind_list.insert(std::make_pair(pidfd, *addr));
+    struct Sock sock = Sock(*(struct sockaddr_in *)addr);
+
+    bind_list.insert(std::make_pair(pidfd, sock));
     returnSystemCall(syscallUUID, 0);
     return;
 }
@@ -116,9 +118,18 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
         return;
     }
 
-    memcpy(addr, &iter->second, sizeof(sockaddr));
+    memcpy(addr, (struct sockaddr *)&iter->second.src_addr, sizeof(sockaddr));
     returnSystemCall(syscallUUID, 0);
     return;
+}
+
+void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+}
+void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlog) {
+}
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
+}
+void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
@@ -137,17 +148,17 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	case WRITE:
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
-	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+	case CONNECT: // Project2-1
+		this->syscall_connect(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
-	case LISTEN:
-		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
+	case LISTEN: // Project2-1
+		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
-	case ACCEPT:
-		//this->syscall_accept(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+	case ACCEPT: // Project2-1
+		this->syscall_accept(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND: // Project1
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
@@ -159,10 +170,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				static_cast<struct sockaddr *>(param.param2_ptr),
 				static_cast<socklen_t*>(param.param3_ptr));
 		break;
-	case GETPEERNAME:
-		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+	case GETPEERNAME: // Project2-1
+		this->syscall_getpeername(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	default:
 		assert(0);
