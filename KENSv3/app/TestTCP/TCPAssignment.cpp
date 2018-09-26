@@ -57,6 +57,9 @@ bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2)
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
     int new_fd = createFileDescriptor(pid);
+    struct PidFd pidfd = PidFd(pid, new_fd);
+    struct Sock sock = Sock();
+    sock_list.insert(std::make_pair(pidfd, sock));
     returnSystemCall(syscallUUID, new_fd);
     return;
 }
@@ -72,6 +75,12 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
     if (iter != bind_list.end()) {
         bind_list.erase(iter);
+    }
+
+    iter = sock_list.find(pidfd);
+    
+    if (iter != sock_list.end()) {
+        sock_list.erase(iter);
     }
 
     returnSystemCall(syscallUUID, 0);
@@ -124,6 +133,7 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
 }
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+
 }
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlog) {
 }

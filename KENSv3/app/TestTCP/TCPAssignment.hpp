@@ -38,7 +38,7 @@ struct PidFd {
 struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
-    char state[10];
+    char state[10] = "CLOSED";
     Sock(){}
     Sock(struct sockaddr_in src_addr) {
         this->src_addr = src_addr;
@@ -47,11 +47,6 @@ struct Sock {
         this->src_addr = src_addr;
         this->dst_addr = dst_addr;
     }
-};
-
-class SockList {
-public:
-      
 };
 
 namespace E
@@ -70,7 +65,21 @@ public:
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
+    // all created sockets
+    std::map<struct PidFd, struct Sock> sock_list;
+    // all bound sockets
     std::map<struct PidFd, struct Sock> bind_list;
+    // unestablished connection(client pidfd - client sock)
+    std::map<struct PidFd, struct Sock> unest_list_1;
+    // unestablished connection(server pidfd - client socks)
+    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> unest_list_2;
+    // established connection(server pidfd - client sock)
+    std::map<struct PidFd, std::pair<struct PidFd, struct Sock>> estab_list;
+    // map server pidfd  and client side established connections
+    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> listen_q;
+    // all closed sockets
+    // std::map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
+ 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
     virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
