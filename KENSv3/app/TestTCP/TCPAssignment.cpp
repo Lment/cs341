@@ -56,19 +56,25 @@ bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2)
 }
 
 bool TCPAssignment::sock_find_sock(struct PidFd pidfd) {
-    auto iter = sock_list.find(pidfd);
-    if (iter == sock_list.end()) {
-        return false;
+    bool flag = false;
+    for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
     }
-    return true;
+    return flag;
 }
 
 bool TCPAssignment::bind_find_sock(struct PidFd pidfd) {
-    auto iter = bind_list.find(pidfd);
-    if (iter == bind_list.end()) {
-        return false;
+    int flag = false;
+    for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
     }
-    return true;
+    return flag;
 }
 
 
@@ -122,12 +128,10 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
     struct PidFd pidfd = PidFd(pid, fd);
-
-    /* Why not working with this line?
     if (!sock_find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
-    } */
+    }
 
     if (bind_find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
