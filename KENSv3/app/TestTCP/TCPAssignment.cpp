@@ -145,8 +145,8 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
             return;
         }
     }
-
-    struct Sock sock = Sock(*(struct sockaddr_in *)addr);
+    struct Sock sock = sock_get_sock(pidfd);
+    sock.src_addr = *(struct sockaddr_in *)addr;
 
     bind_list.insert(std::make_pair(pidfd, sock));
     returnSystemCall(syscallUUID, 0);
