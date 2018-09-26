@@ -19,6 +19,8 @@
 
 #include <E/E_TimerModule.hpp>
 
+using namespace std;
+
 struct PidFd {
     int pid;
     int fd;
@@ -28,7 +30,7 @@ struct PidFd {
         this->fd = fd;
     }
     bool operator<(const PidFd& pidfd) const{
-        return ((this->fd != pidfd.fd)|| (this->pid != pidfd.pid));
+        return ((this->pid != pidfd.pid) || (this->fd != pidfd.fd));
     }
     bool operator==(const PidFd& pidfd) const{
         return ((this->pid == pidfd.pid) && (this->fd == pidfd.fd));
@@ -38,7 +40,7 @@ struct PidFd {
 struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
-    char state[10] = "CLOSED";
+    string state = "CLOSED";
     Sock(){}
     Sock(struct sockaddr_in src_addr) {
         this->src_addr = src_addr;
@@ -77,12 +79,29 @@ protected:
     std::map<struct PidFd, std::pair<struct PidFd, struct Sock>> estab_list;
     // map server pidfd  and client side established connections
     std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> listen_q;
+    // map pidfd and UUID for unblocking
+    std::map<struct PidFd, UUID> uuid_list;
+    // map pidfd and seq number for handshaking
+    std::map<struct PidFd, int> seq_list;
     // all closed sockets
     // std::map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
- 
+
+    int used_port[64512] = {0};
+    uint8_t fin = 0b00000001;
+    uint8_t syn = 0b00000010;
+    uint8_t ack = 0b00010000;
+
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
+
     virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
+    virtual bool sock_find_sock(struct PidFd pidfd);
+    virtual bool bind_find_sock(struct PidFd pidfd);
+    virtual struct Sock sock_get_sock(struct PidFd pidfd);
+    virtual struct Sock bind_get_sock(struct PidFd pidfd);
+    virtual void sock_remove_sock(struct PidFd pidfd);
+    virtual void bind_remove_sock(struct PidFd pidfd);
+    
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
     virtual void syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen);
