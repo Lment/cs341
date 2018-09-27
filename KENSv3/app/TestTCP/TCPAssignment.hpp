@@ -72,13 +72,13 @@ protected:
     // all bound sockets
     std::map<struct PidFd, struct Sock> bind_list;
     // unestablished connection(client pidfd - client sock)
-    std::map<struct PidFd, struct Sock> unest_list_1;
+    std::map<struct PidFd, struct Sock> cli_list;
     // unestablished connection(server pidfd - client socks)
-    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> unest_list_2;
-    // established connection(server pidfd - client sock)
-    std::map<struct PidFd, std::pair<struct PidFd, struct Sock>> estab_list;
+    std::map<struct PidFd, std::set<struct Sock>> svr_list;
+    // established connection(each pidfd - sock for server and client)
+    std::map<struct PidFd, struct Sock> estab_list;
     // map server pidfd  and client side established connections
-    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> listen_q;
+    std::map<struct PidFd, std::queue<struct Sock>> listen_q;
     // map pidfd and UUID for unblocking
     std::map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
@@ -101,6 +101,8 @@ protected:
     virtual struct Sock bind_get_sock(struct PidFd pidfd);
     virtual void sock_remove_sock(struct PidFd pidfd);
     virtual void bind_remove_sock(struct PidFd pidfd);
+    virtual bool find_listen_q(struct PidFd pidfd);
+    virtual std::queue<struct Sock> get_listen_q(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);

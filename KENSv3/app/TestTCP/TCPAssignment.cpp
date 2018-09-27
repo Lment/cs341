@@ -77,7 +77,6 @@ bool TCPAssignment::bind_find_sock(struct PidFd pidfd) {
     return flag;
 }
 
-
 struct Sock TCPAssignment::sock_get_sock(struct PidFd pidfd) {
     auto iter = sock_list.find(pidfd);
     return iter->second;
@@ -104,6 +103,22 @@ void TCPAssignment::bind_remove_sock(struct PidFd pidfd) {
     return;
 }
 
+bool TCPAssignment::find_listen_q(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = listen_q.begin();iter != listen_q.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+std::queue<struct Sock> TCPAssignment::get_listen_q(struct PidFd pidfd) {
+    auto iter = listen_q.find(pidfd);
+    return iter->second;
+}
+        
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
     int new_fd = createFileDescriptor(pid);
@@ -267,7 +282,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     sock.dst_addr = *addr_in;
     sock.state = "SYN_SENT";
 
-    unest_list_1.insert(make_pair(pidfd, sock)); // Do I have to create new same socket? or just use it?, if I juse use it should change bind to use sock_list's sock
+    cli_list.insert(make_pair(pidfd, sock)); // Do I have to create new same socket? or just use it?, if I juse use it should change bind to use sock_list's sock
     uuid_list.insert(make_pair(pidfd, syscallUUID));
     this->sendPacket("IPv4", p);
     return;
@@ -338,6 +353,36 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
     /* TODO
     */
+    struct PidFd pidfd = PidFd(pid, fd);
+    struct sockaddr_in *addr_in = (sockaddr_in *)addr;
+
+    if (!find_listen_q(pidfd)) {
+        returnSystemCall(syscallUUID, -1);
+    }
+
+    auto lq = get_listen_q(pidfd);
+    if (lq.empty()) { // block accept()
+        uuid_list.insert(std::make_pair(pidfd, syscallUUID));
+    } else { // consume one connnection
+        int new_fd = createFileDescriptor(pid);
+        
+        struct PidFd new_pidfd = PidFd(pid, new_fd);
+        
+        struct Sock svr_sock = sock_get_sock(pidfd);
+        struct Sock new_sock = Sock(svr_sock.src_addr);
+        
+        sock_list.insert(make_pair(new_pidfd, new_sock));
+        estab_list.insert(make_pair(new_pidfd, new_sock));
+
+        struct Sock cli_sock = lq.front();
+        lq.pop();
+        memcpy(addr_in, &cli_sock, sizeof(struct sockaddr_in));
+        *addrlen = sizeof(sockaddr_in);
+        returnSystemCall(syscallUUID, new_fd);
+
+    }
+    return;
+
     /*
     Returns a nonnegative integer that is a file descriptor for the accepted socket
 
