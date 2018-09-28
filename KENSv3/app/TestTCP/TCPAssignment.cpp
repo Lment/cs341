@@ -283,15 +283,17 @@ void TCPAssignment::remove_listenq(struct PidFd pidfd) {
 }
 
 
-/* Order
-   1. socket
-   2. close
-   3. bind
-   4. getsockname
-   5. connect
-   6. listen
-   7. accept
-   8. getpeername
+/* ####################
+   ## Order          ##
+   ## 1. socket      ##
+   ## 2. close       ##
+   ## 3. bind        ##
+   ## 4. getsockname ##
+   ## 5. connect     ##
+   ## 6. listen      ##
+   ## 7. accept      ##
+   ## 8. getpeername ##
+   ####################
 */
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
@@ -326,6 +328,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
     struct PidFd pidfd = PidFd(pid, fd);
+
     if (!find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
@@ -336,17 +339,18 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
         return;
     }
 
-    // iterate through map and check if bind rules are violated
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (is_addr_same(*addr, *(struct sockaddr *)&iter->second.src_addr)) {
             returnSystemCall(syscallUUID, -1);
             return;
         }
     }
+
     struct Sock sock = get_sock(pidfd);
     sock.src_addr = *(struct sockaddr_in *)addr;
 
     bind_list.insert(make_pair(pidfd, sock));
+
     returnSystemCall(syscallUUID, 0);
     return;
 }
@@ -360,17 +364,18 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
     }
 
     struct Sock sock = get_bind(pidfd);
-
     memcpy(addr, (struct sockaddr *)&sock.src_addr, sizeof(sockaddr));
+
     returnSystemCall(syscallUUID, 0);
     return;
 }
 
-
-    /*
-        14: Ethernet Header
-        20: IP Header
-        20: TCP Header
+    /* ##################################
+       ## Header structure             ##
+       ## 00 - 13(14): Ethernet Header ##
+       ## 14 - 33(20): IP Header       ##
+       ## 33 - 53(20): TCP Header      ##
+       ##################################
     */
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
@@ -383,7 +388,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
-
     if (!find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
@@ -394,7 +398,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
         return;
     }
 
-    Packet *p = allocatePacket(60);
+    Packet *p = allocatePacket(54);
 
     uint32_t dst_ip = addr_in->sin_addr.s_addr;
     uint16_t dst_port = addr_in->sin_port;
