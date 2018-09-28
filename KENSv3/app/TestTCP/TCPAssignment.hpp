@@ -78,7 +78,7 @@ protected:
     // established connection(each pidfd - sock for server and client)
     map<struct PidFd, struct Sock> estab_list;
     // map server pidfd  and client side established connections
-    map<struct PidFd, queue<struct Sock>> listen_q;
+    map<struct PidFd, queue<struct Sock>> listenq;
     // map pidfd and UUID for unblocking
     map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
@@ -95,14 +95,16 @@ protected:
 	virtual void packetArrived(string fromModule, Packet* packet) final;
 
     virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
-    virtual bool sock_find_sock(struct PidFd pidfd);
-    virtual bool bind_find_sock(struct PidFd pidfd);
-    virtual struct Sock sock_get_sock(struct PidFd pidfd);
-    virtual struct Sock bind_get_sock(struct PidFd pidfd);
-    virtual void sock_remove_sock(struct PidFd pidfd);
-    virtual void bind_remove_sock(struct PidFd pidfd);
-    virtual bool find_listen_q(struct PidFd pidfd);
-    virtual queue<struct Sock> get_listen_q(struct PidFd pidfd);
+    virtual bool find_sock(struct PidFd pidfd);
+    virtual bool find_bind(struct PidFd pidfd);
+    virtual bool find_listenq(struct PidFd pidfd);
+
+    virtual struct Sock get_sock(struct PidFd pidfd);
+    virtual struct Sock get_bind(struct PidFd pidfd);
+    virtual queue<struct Sock> get_listenq(struct PidFd pidfd);
+
+    virtual void remove_sock(struct PidFd pidfd);
+    virtual void remove_bind(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);

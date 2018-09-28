@@ -40,7 +40,7 @@ void TCPAssignment::initialize()
     cli_list.clear();
     svr_list.clear();
     estab_list.clear();
-    listen_q.clear();
+    listenq.clear();
     uuid_list.clear();
     seq_list.clear();
 }
@@ -56,7 +56,6 @@ void TCPAssignment::finalize()
 */
 
 bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2) {
-    // if same return true, else return false
     struct sockaddr_in left = *(struct sockaddr_in *)&addr_1;
     struct sockaddr_in right = *(struct sockaddr_in *)&addr_2;
     if (left.sin_addr.s_addr == right.sin_addr.s_addr ||
@@ -69,7 +68,7 @@ bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2)
     return false;
 }
 
-bool TCPAssignment::sock_find_sock(struct PidFd pidfd) {
+bool TCPAssignment::find_sock(struct PidFd pidfd) {
     bool flag = false;
     for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
         if (iter->first == pidfd) {
@@ -80,7 +79,7 @@ bool TCPAssignment::sock_find_sock(struct PidFd pidfd) {
     return flag;
 }
 
-bool TCPAssignment::bind_find_sock(struct PidFd pidfd) {
+bool TCPAssignment::find_bind(struct PidFd pidfd) {
     int flag = false;
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (iter->first == pidfd) {
@@ -91,35 +90,9 @@ bool TCPAssignment::bind_find_sock(struct PidFd pidfd) {
     return flag;
 }
 
-struct Sock TCPAssignment::sock_get_sock(struct PidFd pidfd) {
-    auto iter = sock_list.find(pidfd);
-    return iter->second;
-}
-
-struct Sock TCPAssignment::bind_get_sock(struct PidFd pidfd) {
-    auto iter = bind_list.find(pidfd);
-    return iter->second;
-}
-
-void TCPAssignment::sock_remove_sock(struct PidFd pidfd) {
-    auto iter = sock_list.find(pidfd);
-    if (iter != sock_list.end()) {
-        sock_list.erase(iter);
-    }
-    return;
-}
-
-void TCPAssignment::bind_remove_sock(struct PidFd pidfd) {
-    auto iter = bind_list.find(pidfd);
-    if (iter != bind_list.end()) {
-        bind_list.erase(iter);
-    }
-    return;
-}
-
-bool TCPAssignment::find_listen_q(struct PidFd pidfd) {
+bool TCPAssignment::find_listenq(struct PidFd pidfd) {
     bool flag = false;
-    for (auto iter = listen_q.begin();iter != listen_q.end();iter++) {
+    for (auto iter = listenq.begin();iter != listenq.end();iter++) {
         if (iter->first == pidfd) {
             flag = true;
             break;
@@ -128,9 +101,81 @@ bool TCPAssignment::find_listen_q(struct PidFd pidfd) {
     return flag;
 }
 
-queue<struct Sock> TCPAssignment::get_listen_q(struct PidFd pidfd) {
-    auto iter = listen_q.find(pidfd);
-    return iter->second;
+// Should be used after checking if find_* returns true
+struct Sock TCPAssignment::get_sock(struct PidFd pidfd) {
+    struct Sock sock;
+    int flag = false;
+    for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
+        if (iter->first == pidfd) {
+            sock = iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return sock;
+}
+
+// Should be used after checking if find_* returns true
+struct Sock TCPAssignment::get_bind(struct PidFd pidfd) {
+    struct Sock sock;
+    int flag = false;
+    for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
+        if (iter->first == pidfd) {
+            sock = iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return sock;
+}
+
+// Should be used after checking if find_* returns true
+queue<struct Sock> TCPAssignment::get_listenq(struct PidFd pidfd) {
+    queue<struct Sock> lq;
+    int flag = false;
+    for (auto iter = listenq.begin();iter != listenq.end();iter++) {
+        if (iter->first == pidfd) {
+            lq = iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return lq;
+}
+
+// Should be used after checking if find_* returns true
+void TCPAssignment::remove_sock(struct PidFd pidfd) {
+    int flag = false;
+    auto global_iter = sock_list.begin();
+    for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
+        if (iter->first == pidfd) {
+            global_iter = iter;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    sock_list.erase(global_iter);
+    return;
+}
+
+// Should be used after checking if find_* returns true
+void TCPAssignment::remove_bind(struct PidFd pidfd) {
+    int flag = false;
+    auto global_iter = bind_list.begin();
+    for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
+        if (iter->first == pidfd) {
+            global_iter = iter;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    bind_list.erase(global_iter);
+    return;
 }
 
 /* Order
@@ -157,9 +202,13 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
     removeFileDescriptor(pid, fd);
     
     struct PidFd pidfd = PidFd(pid, fd);
- 
-    bind_remove_sock(pidfd);
-    sock_remove_sock(pidfd);
+    if (find_sock(pidfd) == true) {
+        remove_sock(pidfd);
+    }
+
+    if (find_bind(pidfd) == true) {
+        remove_bind(pidfd);
+    }
 
     returnSystemCall(syscallUUID, 0);
     return;
@@ -167,12 +216,12 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
     struct PidFd pidfd = PidFd(pid, fd);
-    if (!sock_find_sock(pidfd)) {
+    if (!find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    if (bind_find_sock(pidfd)) {
+    if (find_bind(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
@@ -184,7 +233,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
             return;
         }
     }
-    struct Sock sock = sock_get_sock(pidfd);
+    struct Sock sock = get_sock(pidfd);
     sock.src_addr = *(struct sockaddr_in *)addr;
 
     bind_list.insert(make_pair(pidfd, sock));
@@ -195,12 +244,12 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
 void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t*addrlen) {
     struct PidFd pidfd = PidFd(pid, fd);
 
-    if (!bind_find_sock(pidfd)) {
+    if (!find_bind(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    struct Sock sock = bind_get_sock(pidfd);
+    struct Sock sock = get_bind(pidfd);
 
     memcpy(addr, (struct sockaddr *)&sock.src_addr, sizeof(sockaddr));
     returnSystemCall(syscallUUID, 0);
@@ -225,12 +274,12 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
 
-    if (!sock_find_sock(pidfd)) {
+    if (!find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    if (sock_get_sock(pidfd).state.compare("CLOSED") != 0) {
+    if (get_sock(pidfd).state.compare("CLOSED") != 0) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
@@ -245,8 +294,8 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
  
     getHost()->getIPAddr(((uint8_t *)(&src_ip)), getHost()->getRoutingTable((uint8_t *)&dst_ip));
 
-    if (bind_find_sock(pidfd)) {
-        src_port = bind_get_sock(pidfd).src_addr.sin_port;
+    if (find_bind(pidfd)) {
+        src_port = get_bind(pidfd).src_addr.sin_port;
     } else {
         srand((unsigned int)time(NULL));
         int rand_port = rand() % 64512;
@@ -285,7 +334,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     checksum = htons(checksum);
     p->writeData(14 + 20 + 16, &checksum, 2);
 
-    struct Sock sock = sock_get_sock(pidfd);
+    struct Sock sock = get_sock(pidfd);
     sock.dst_addr = *addr_in;
     sock.state = "SYN_SENT";
 
@@ -332,25 +381,25 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 
     struct PidFd pidfd = PidFd(pid, fd);
 
-    if (!sock_find_sock(pidfd)) {
+    if (!find_sock(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
     
-    struct Sock sock = sock_get_sock(pidfd);
+    struct Sock sock = get_sock(pidfd);
 
     if (sock.state.compare("CLOSED") != 0) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
     
-    if (!bind_find_sock(pidfd)) {
+    if (!find_bind(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
     sock.state = "LISTEN";
-    struct Sock sock2 = bind_get_sock(pidfd);
+    struct Sock sock2 = get_bind(pidfd);
     sock2.state = "LISTEN";
 
     returnSystemCall(syscallUUID, 0);
@@ -363,11 +412,11 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
 /*    struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
-    if (!find_listen_q(pidfd)) {
+    if (!find_listenq(pidfd)) {
         returnSystemCall(syscallUUID, -1);
     }
 
-    auto lq = get_listen_q(pidfd);
+    auto lq = get_listenq(pidfd);
     if (lq.empty()) { // block accept()
         uuid_list.insert(make_pair(pidfd, syscallUUID));
     } else { // consume one connnection
@@ -375,7 +424,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
         
         struct PidFd new_pidfd = PidFd(pid, new_fd);
         
-        struct Sock svr_sock = sock_get_sock(pidfd);
+        struct Sock svr_sock = get_sock(pidfd);
         struct Sock new_sock = Sock(svr_sock.src_addr);
         
         sock_list.insert(make_pair(new_pidfd, new_sock));
