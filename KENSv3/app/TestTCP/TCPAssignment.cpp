@@ -50,6 +50,11 @@ void TCPAssignment::finalize()
 
 }
 
+/* ######################
+   ## Helper Functions ##
+   ######################
+*/
+
 bool TCPAssignment::is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2) {
     // if same return true, else return false
     struct sockaddr_in left = *(struct sockaddr_in *)&addr_1;
@@ -127,7 +132,17 @@ queue<struct Sock> TCPAssignment::get_listen_q(struct PidFd pidfd) {
     auto iter = listen_q.find(pidfd);
     return iter->second;
 }
-        
+
+/* Order
+   1. socket
+   2. close
+   3. bind
+   4. getsockname
+   5. connect
+   6. listen
+   7. accept
+   8. getpeername
+*/
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
     int new_fd = createFileDescriptor(pid);
@@ -192,23 +207,6 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
     return;
 }
 
-/*
-    // all created sockets
-    map<struct PidFd, struct Sock> sock_list;
-    // all bound sockets
-    map<struct PidFd, struct Sock> bind_list;
-    // unestablished connection(client pidfd - client sock)
-    map<struct PidFd, struct Sock> unest_list_1;
-    // unestablished connection(server pidfd - client socks)
-    map<struct PidFd, set<pair<struct PidFd, struct Sock>>> unest_list_2;
-    // established connection(server pidfd - client sock)
-    map<struct PidFd, pair<struct PidFd, struct Sock>> estab_list;
-    // map server pidfd  and client side established connections
-    map<struct PidFd, set<pair<struct PidFd, struct Sock>>> listen_q;
-    // map pidfd and UUID for unblocking
-    map<struct PidFd, UUID> block_list;
- 
-*/
 
     /*
         14: Ethernet Header
