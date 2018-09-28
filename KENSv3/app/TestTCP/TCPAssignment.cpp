@@ -362,7 +362,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
     /* TODO
     */
-    struct PidFd pidfd = PidFd(pid, fd);
+/*    struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
     if (!find_listen_q(pidfd)) {
@@ -389,7 +389,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
         *addrlen = sizeof(sockaddr_in);
         returnSystemCall(syscallUUID, new_fd);
 
-    }
+    } */
     return;
 
     /*
