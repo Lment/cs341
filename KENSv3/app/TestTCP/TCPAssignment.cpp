@@ -90,6 +90,62 @@ bool TCPAssignment::find_bind(struct PidFd pidfd) {
     return flag;
 }
 
+bool TCPAssignment::find_cli(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = cli_list.begin();iter != cli_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_svr(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_estab(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = estab_list.begin();iter != estab_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+
+bool TCPAssignment::find_uuid(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = uuid_list.begin();iter != uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_seq(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = seq_list.begin();iter != seq_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
 bool TCPAssignment::find_listenq(struct PidFd pidfd) {
     bool flag = false;
     for (auto iter = listenq.begin();iter != listenq.end();iter++) {
@@ -146,37 +202,86 @@ queue<struct Sock> TCPAssignment::get_listenq(struct PidFd pidfd) {
     return lq;
 }
 
-// Should be used after checking if find_* returns true
 void TCPAssignment::remove_sock(struct PidFd pidfd) {
-    int flag = false;
-    auto global_iter = sock_list.begin();
     for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
         if (iter->first == pidfd) {
-            global_iter = iter;
-            flag = true;
+            sock_list.erase(iter);
             break;
          }
     }
-    assert(flag == true);
-    sock_list.erase(global_iter);
     return;
 }
 
-// Should be used after checking if find_* returns true
 void TCPAssignment::remove_bind(struct PidFd pidfd) {
-    int flag = false;
-    auto global_iter = bind_list.begin();
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (iter->first == pidfd) {
-            global_iter = iter;
-            flag = true;
+            bind_list.erase(iter);
             break;
          }
     }
-    assert(flag == true);
-    bind_list.erase(global_iter);
     return;
 }
+
+void TCPAssignment::remove_cli(struct PidFd pidfd) {
+    for (auto iter = cli_list.begin();iter != cli_list.end();iter++) {
+        if (iter->first == pidfd) {
+            cli_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_svr(struct PidFd pidfd) {
+    for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
+        if (iter->first == pidfd) {
+            svr_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_estab(struct PidFd pidfd) {
+    for (auto iter = estab_list.begin();iter != estab_list.end();iter++) {
+        if (iter->first == pidfd) {
+            estab_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_uuid(struct PidFd pidfd) {
+    for (auto iter = uuid_list.begin();iter != uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            uuid_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_seq(struct PidFd pidfd) {
+    for (auto iter = seq_list.begin();iter != seq_list.end();iter++) {
+        if (iter->first == pidfd) {
+            seq_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_listenq(struct PidFd pidfd) {
+    for (auto iter = listenq.begin();iter != listenq.end();iter++) {
+        if (iter->first == pidfd) {
+            listenq.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
 
 /* Order
    1. socket
@@ -191,9 +296,12 @@ void TCPAssignment::remove_bind(struct PidFd pidfd) {
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
     int new_fd = createFileDescriptor(pid);
+
     struct PidFd pidfd = PidFd(pid, new_fd);
     struct Sock sock = Sock();
+
     sock_list.insert(make_pair(pidfd, sock));
+
     returnSystemCall(syscallUUID, new_fd);
     return;
 }
@@ -202,13 +310,15 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
     removeFileDescriptor(pid, fd);
     
     struct PidFd pidfd = PidFd(pid, fd);
-    if (find_sock(pidfd) == true) {
-        remove_sock(pidfd);
-    }
 
-    if (find_bind(pidfd) == true) {
-        remove_bind(pidfd);
-    }
+    remove_sock(pidfd);
+    remove_bind(pidfd);
+    remove_cli(pidfd);
+    remove_svr(pidfd);
+    remove_estab(pidfd);
+    remove_uuid(pidfd);
+    remove_seq(pidfd);
+    remove_listenq(pidfd);
 
     returnSystemCall(syscallUUID, 0);
     return;

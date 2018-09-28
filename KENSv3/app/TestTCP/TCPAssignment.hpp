@@ -97,6 +97,11 @@ protected:
     virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
     virtual bool find_sock(struct PidFd pidfd);
     virtual bool find_bind(struct PidFd pidfd);
+    virtual bool find_cli(struct PidFd pidfd);
+    virtual bool find_svr(struct PidFd pidfd);
+    virtual bool find_estab(struct PidFd pidfd);
+    virtual bool find_uuid(struct PidFd pidfd);
+    virtual bool find_seq(struct PidFd pidfd);
     virtual bool find_listenq(struct PidFd pidfd);
 
     virtual struct Sock get_sock(struct PidFd pidfd);
@@ -105,6 +110,12 @@ protected:
 
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
+    virtual void remove_cli(struct PidFd pidfd);
+    virtual void remove_svr(struct PidFd pidfd);
+    virtual void remove_estab(struct PidFd pidfd);
+    virtual void remove_uuid(struct PidFd pidfd);
+    virtual void remove_seq(struct PidFd pidfd);
+    virtual void remove_listenq(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
