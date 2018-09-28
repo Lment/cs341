@@ -14,6 +14,8 @@
 #include <E/Networking/E_NetworkUtil.hpp>
 #include "TCPAssignment.hpp"
 
+using namespace std;
+
 namespace E
 {
 
@@ -33,7 +35,14 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
-
+    sock_list.clear();
+    bind_list.clear();
+    cli_list.clear();
+    svr_list.clear();
+    estab_list.clear();
+    listen_q.clear();
+    uuid_list.clear();
+    seq_list.clear();
 }
 
 void TCPAssignment::finalize()
@@ -114,7 +123,7 @@ bool TCPAssignment::find_listen_q(struct PidFd pidfd) {
     return flag;
 }
 
-std::queue<struct Sock> TCPAssignment::get_listen_q(struct PidFd pidfd) {
+queue<struct Sock> TCPAssignment::get_listen_q(struct PidFd pidfd) {
     auto iter = listen_q.find(pidfd);
     return iter->second;
 }
@@ -124,7 +133,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
     int new_fd = createFileDescriptor(pid);
     struct PidFd pidfd = PidFd(pid, new_fd);
     struct Sock sock = Sock();
-    sock_list.insert(std::make_pair(pidfd, sock));
+    sock_list.insert(make_pair(pidfd, sock));
     returnSystemCall(syscallUUID, new_fd);
     return;
 }
@@ -163,7 +172,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
     struct Sock sock = sock_get_sock(pidfd);
     sock.src_addr = *(struct sockaddr_in *)addr;
 
-    bind_list.insert(std::make_pair(pidfd, sock));
+    bind_list.insert(make_pair(pidfd, sock));
     returnSystemCall(syscallUUID, 0);
     return;
 }
@@ -185,19 +194,19 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
 
 /*
     // all created sockets
-    std::map<struct PidFd, struct Sock> sock_list;
+    map<struct PidFd, struct Sock> sock_list;
     // all bound sockets
-    std::map<struct PidFd, struct Sock> bind_list;
+    map<struct PidFd, struct Sock> bind_list;
     // unestablished connection(client pidfd - client sock)
-    std::map<struct PidFd, struct Sock> unest_list_1;
+    map<struct PidFd, struct Sock> unest_list_1;
     // unestablished connection(server pidfd - client socks)
-    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> unest_list_2;
+    map<struct PidFd, set<pair<struct PidFd, struct Sock>>> unest_list_2;
     // established connection(server pidfd - client sock)
-    std::map<struct PidFd, std::pair<struct PidFd, struct Sock>> estab_list;
+    map<struct PidFd, pair<struct PidFd, struct Sock>> estab_list;
     // map server pidfd  and client side established connections
-    std::map<struct PidFd, std::set<std::pair<struct PidFd, struct Sock>>> listen_q;
+    map<struct PidFd, set<pair<struct PidFd, struct Sock>>> listen_q;
     // map pidfd and UUID for unblocking
-    std::map<struct PidFd, UUID> block_list;
+    map<struct PidFd, UUID> block_list;
  
 */
 
@@ -362,7 +371,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
 
     auto lq = get_listen_q(pidfd);
     if (lq.empty()) { // block accept()
-        uuid_list.insert(std::make_pair(pidfd, syscallUUID));
+        uuid_list.insert(make_pair(pidfd, syscallUUID));
     } else { // consume one connnection
         int new_fd = createFileDescriptor(pid);
         
@@ -452,7 +461,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	}
 }
 
-void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
+void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 {
     //Simple L3 forwarding
     //extract address

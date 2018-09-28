@@ -68,23 +68,23 @@ public:
 	virtual ~TCPAssignment();
 protected:
     // all created sockets
-    std::map<struct PidFd, struct Sock> sock_list;
+    map<struct PidFd, struct Sock> sock_list;
     // all bound sockets
-    std::map<struct PidFd, struct Sock> bind_list;
+    map<struct PidFd, struct Sock> bind_list;
     // unestablished connection(client pidfd - client sock)
-    std::map<struct PidFd, struct Sock> cli_list;
+    map<struct PidFd, struct Sock> cli_list;
     // unestablished connection(server pidfd - client socks)
-    std::map<struct PidFd, std::set<struct Sock>> svr_list;
+    map<struct PidFd, set<struct Sock>> svr_list;
     // established connection(each pidfd - sock for server and client)
-    std::map<struct PidFd, struct Sock> estab_list;
+    map<struct PidFd, struct Sock> estab_list;
     // map server pidfd  and client side established connections
-    std::map<struct PidFd, std::queue<struct Sock>> listen_q;
+    map<struct PidFd, queue<struct Sock>> listen_q;
     // map pidfd and UUID for unblocking
-    std::map<struct PidFd, UUID> uuid_list;
+    map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
-    std::map<struct PidFd, int> seq_list;
+    map<struct PidFd, int> seq_list;
     // all closed sockets
-    // std::map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
+    // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
     int used_port[64512] = {0};
     uint8_t fin = 0b00000001;
@@ -92,7 +92,7 @@ protected:
     uint8_t ack = 0b00010000;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
-	virtual void packetArrived(std::string fromModule, Packet* packet) final;
+	virtual void packetArrived(string fromModule, Packet* packet) final;
 
     virtual bool is_addr_same(struct sockaddr addr_1, struct sockaddr addr_2);
     virtual bool sock_find_sock(struct PidFd pidfd);
@@ -102,7 +102,7 @@ protected:
     virtual void sock_remove_sock(struct PidFd pidfd);
     virtual void bind_remove_sock(struct PidFd pidfd);
     virtual bool find_listen_q(struct PidFd pidfd);
-    virtual std::queue<struct Sock> get_listen_q(struct PidFd pidfd);
+    virtual queue<struct Sock> get_listen_q(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
