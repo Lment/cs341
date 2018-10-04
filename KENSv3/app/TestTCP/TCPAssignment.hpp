@@ -49,6 +49,12 @@ struct Sock {
         this->src_addr = src_addr;
         this->dst_addr = dst_addr;
     }
+    Sock(struct sockaddr_in src_addr, struct sockaddr_in dst_addr, string state) {
+        this->src_addr = src_addr;
+        this->dst_addr = dst_addr;
+        this->state = state;
+    }
+    
 };
 
 namespace E
@@ -79,14 +85,14 @@ protected:
     map<struct PidFd, struct Sock> estab_list;
     // map server pidfd  and client side established connections
     map<struct PidFd, queue<struct Sock>> listenq;
-    // map pidfd and UUID for unblocking
+    // map pidfd and UUID for unblocking(accept, connect)
     map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
     map<struct PidFd, int> seq_list;
     // all closed sockets
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
-    int used_port[64512] = {0};
+    int used_port[65536 - 1024] = {0};
     uint8_t fin = 0b00000001;
     uint8_t syn = 0b00000010;
     uint8_t ack = 0b00010000;
@@ -104,9 +110,10 @@ protected:
     virtual bool find_seq(struct PidFd pidfd);
     virtual bool find_listenq(struct PidFd pidfd);
 
-    virtual struct Sock get_sock(struct PidFd pidfd);
-    virtual struct Sock get_bind(struct PidFd pidfd);
-    virtual queue<struct Sock> get_listenq(struct PidFd pidfd);
+    virtual struct Sock *get_sock(struct PidFd pidfd);
+    virtual struct Sock *get_bind(struct PidFd pidfd);
+    virtual struct Sock *get_estab(struct PidFd pidfd);
+    virtual queue<struct Sock> *get_listenq(struct PidFd pidfd);
 
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);

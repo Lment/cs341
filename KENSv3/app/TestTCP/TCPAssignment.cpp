@@ -158,12 +158,12 @@ bool TCPAssignment::find_listenq(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
-struct Sock TCPAssignment::get_sock(struct PidFd pidfd) {
-    struct Sock sock;
+struct Sock *TCPAssignment::get_sock(struct PidFd pidfd) {
+    struct Sock *sock;
     int flag = false;
     for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
         if (iter->first == pidfd) {
-            sock = iter->second;
+            sock = &iter->second;
             flag = true;
             break;
          }
@@ -173,12 +173,12 @@ struct Sock TCPAssignment::get_sock(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
-struct Sock TCPAssignment::get_bind(struct PidFd pidfd) {
-    struct Sock sock;
+struct Sock *TCPAssignment::get_bind(struct PidFd pidfd) {
+    struct Sock *sock;
     int flag = false;
     for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
         if (iter->first == pidfd) {
-            sock = iter->second;
+            sock = &iter->second;
             flag = true;
             break;
          }
@@ -188,12 +188,27 @@ struct Sock TCPAssignment::get_bind(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
-queue<struct Sock> TCPAssignment::get_listenq(struct PidFd pidfd) {
-    queue<struct Sock> lq;
+struct Sock *TCPAssignment::get_estab(struct PidFd pidfd) {
+    struct Sock *sock;
+    int flag = false;
+    for (auto iter = estab_list.begin();iter != estab_list.end();iter++) {
+        if (iter->first == pidfd) {
+            sock = &iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return sock;
+}
+
+// Should be used after checking if find_* returns true
+queue<struct Sock> *TCPAssignment::get_listenq(struct PidFd pidfd) {
+    queue<struct Sock> *lq;
     int flag = false;
     for (auto iter = listenq.begin();iter != listenq.end();iter++) {
         if (iter->first == pidfd) {
-            lq = iter->second;
+            lq = &iter->second;
             flag = true;
             break;
          }
@@ -346,10 +361,10 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
         }
     }
 
-    struct Sock sock = get_sock(pidfd);
-    sock.src_addr = *(struct sockaddr_in *)addr;
+    struct Sock *sock = get_sock(pidfd);
+    sock->src_addr = *(struct sockaddr_in *)addr;
 
-    bind_list.insert(make_pair(pidfd, sock));
+    bind_list.insert(make_pair(pidfd, *sock));
 
     returnSystemCall(syscallUUID, 0);
     return;
@@ -363,8 +378,8 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
         return;
     }
 
-    struct Sock sock = get_bind(pidfd);
-    memcpy(addr, (struct sockaddr *)&sock.src_addr, sizeof(sockaddr));
+    struct Sock *sock = get_bind(pidfd);
+    memcpy(addr, (struct sockaddr *)&sock->src_addr, sizeof(sockaddr));
 
     returnSystemCall(syscallUUID, 0);
     return;
@@ -378,110 +393,106 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
        ##################################
     */
 
-void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
-    /* TODO
-        1v. check sock_list, return -1 if not exists
-        2v. check socket status is not closed, return -1
-        3 . [?]: could it be listen state?
-        4 . handle packet
+
+    /*  syscall_connect
+        Specification
+        1. If already bound, use that address.
+        2. Else, automatically bind the socket with random port and local address(implicit bind)
+        3. Get local address from its local routing information
+        4. If there are multiple interfaces, source IP addresses are dependent on the destination
+        5. Store remote address
+        6. Send SYN
+        7. Receive SYN+ACK then send ACK
+        8. Returns 0 if connection/binding is successful, -1 if not.
+        9. Make a function to map income packets to opened TCP sockets (use 4 field above)
+        
+        To-Do
+        1. get source address and port
+        2. create packet
+        3. change socket in sock_list state to syn_sent
+        4. add dst_addr to socket in sock_list
+        5. add copied socket to cli_list and uuid_list
     */
+
+
+void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+
+    // make pidfd and sockaddr_in structure
     struct PidFd pidfd = PidFd(pid, fd);
-    struct sockaddr_in *addr_in = (sockaddr_in *)addr;
+    struct sockaddr_in *svr_addr_in = (sockaddr_in *)addr;
 
-    if (!find_sock(pidfd)) {
+    // check if the socket is valid and has closed state
+    if ((!find_sock(pidfd)) ||
+        (get_sock(pidfd)->state.compare("CLOSED") != 0)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    if (get_sock(pidfd).state.compare("CLOSED") != 0) {
-        returnSystemCall(syscallUUID, -1);
-        return;
-    }
-
-    Packet *p = allocatePacket(54);
-
-    uint32_t dst_ip = addr_in->sin_addr.s_addr;
-    uint16_t dst_port = addr_in->sin_port;
-
+    // ip address and port should be in network order
+    // save destination address
+    uint32_t dst_ip = svr_addr_in->sin_addr.s_addr;
+    uint16_t dst_port = svr_addr_in->sin_port;
+    
+    // get source address from the host
     uint32_t src_ip;
     uint16_t src_port;
- 
-    getHost()->getIPAddr(((uint8_t *)(&src_ip)), getHost()->getRoutingTable((uint8_t *)&dst_ip));
-
+    
+    getHost()->getIPAddr(((uint8_t *)(&src_ip)),
+                        getHost()->getRoutingTable((uint8_t *)(&dst_ip)));
+    
+    // get source port randomly and if occured, handling simultaneous open
     if (find_bind(pidfd)) {
-        src_port = get_bind(pidfd).src_addr.sin_port;
+        src_port = get_bind(pidfd)->src_addr.sin_port;
     } else {
         srand((unsigned int)time(NULL));
-        int rand_port = rand() % 64512;
+        int rand_port = rand() % (65536 - 1024);
         used_port[rand_port] = 1;
         src_port = rand_port + 1024;
-        src_port = htons(src_port); 
+        src_port = htons(src_port);
     }
- 
-    p->writeData(14 + 12, &src_ip, 4);
-    p->writeData(14 + 16, &dst_ip, 4);
-    p->writeData(14 + 20 + 0, &src_port, 2);
-    p->writeData(14 + 20 + 2, &dst_port, 2);
-
+    
+    // create a new packet
+    Packet *packet = allocatePacket(54);
+    // write src/dst address to packet
+    packet->writeData(14 + 12, &src_ip, 4);
+    packet->writeData(14 + 16, &dst_ip, 4);
+    packet->writeData(14 + 20 + 0, &src_port, 2);
+    packet->writeData(14 + 20 + 2, &dst_port, 2);
+    
+    // write sequence number
     uint32_t seq = htonl(rand());
-    p->writeData(14 + 20 + 4, &seq, 4);
+    packet->writeData(14 + 20 + 4, &seq, 4);
     seq_list.insert(make_pair(pidfd, ntohl(seq)));
 
-    uint32_t zero4 = 0;
-    p->writeData(14 + 20 + 8, &zero4, 4);
-
+    // fill in extra data
+    uint32_t zero_4b = 0;
     uint8_t offset = 5;
-    p->writeData(14 + 20 + 12, &offset, 1);
+    uint16_t window = htons((uint16_t)51200);
+    packet->writeData(14 + 20 + 8, &zero_4b, 4);
+    packet->writeData(14 + 20 + 12, &offset, 1);
+    packet->writeData(14 + 20 + 13, &syn, 1);
+    packet->writeData(14 + 20 + 14, &window, 2);
+    packet->writeData(14 + 20 + 16, &zero_4b, 4);
 
-    p->writeData(14 + 20 + 13, &syn, 1);
-
-    uint16_t window = 50000;
-    window = htons(window);
-    p->writeData(14 + 20 + 14, &window, 2);
-
-    p->writeData(14 + 20 + 16, &zero4, 4);
-
+    // calculate checksum
     uint8_t *tcp_header = (uint8_t *)malloc(20);
-    p->readData(34, tcp_header, 20);
-
+    packet->readData(14 + 20, tcp_header, 20);
+   
     uint16_t checksum = ~(NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20));
     checksum = htons(checksum);
-    p->writeData(14 + 20 + 16, &checksum, 2);
+    packet->writeData(14 + 20 + 16, &checksum, 2);
 
-    struct Sock sock = get_sock(pidfd);
-    sock.dst_addr = *addr_in;
-    sock.state = "SYN_SENT";
+    struct Sock *sock = get_sock(pidfd);
 
-    cli_list.insert(make_pair(pidfd, sock)); // Do I have to create new same socket? or just use it?, if I juse use it should change bind to use sock_list's sock
+    sock->state = "SYN_SENT";
+    sock->dst_addr = *svr_addr_in;
+
+    struct Sock *new_sock_cli = (struct Sock *)malloc(sizeof(struct Sock));
+    memcpy(new_sock_cli, sock, sizeof(struct Sock));
+    cli_list.insert(make_pair(pidfd, *new_sock_cli));
     uuid_list.insert(make_pair(pidfd, syscallUUID));
-    this->sendPacket("IPv4", p);
+    this->sendPacket("IPv4", packet);
     return;
-    
-    
-    /*
-    1. implicit binding (get local address from its local routing information)
-    2. Store remote address
-    3. Send SYN
-    4. Receive SYN+ACK then send ACK
-    
-    Returns 0 if connection/binding is successful, -1 if not.
-
-    Socket determined by: Source IP Source Port Destination IP Destination Port Suggestions:
-
-    Make a function to map income packets to opened TCP sockets (use 4 field above)
-
-    Send SYN on connect
-
-    Implement it as a state machine (ST_CLOSED, ST_SYN_SENT, ST_ESTABLISHED, ...)
-
-    If already bound, use that address.
-
-    Else, automatically bind the socket with random port and local address(implicit bind)
-
-    Get local address from its local routing information
-
-    If there are multiple interfaces, source IP addresses are dependent on the destination
-    */
 }
 
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlog) {
@@ -492,7 +503,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
         4v. change socket state to Listen
         5 . handle backlog
     */
-
+/*
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -518,6 +529,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 
     returnSystemCall(syscallUUID, 0);
     return;
+*/
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
@@ -572,6 +584,20 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struc
     Example from test case code:
     Obtains the address of the peer connected to the socket
     */
+    struct PidFd pidfd = PidFd(pid, fd);
+
+    if (!find_estab(pidfd)) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    }
+
+    struct Sock *sock = get_estab(pidfd);
+
+    struct sockaddr_in *svr_addr_in = (struct sockaddr_in *)addr;
+    memcpy(svr_addr_in, &sock->dst_addr, sizeof(struct sockaddr_in));
+    
+    returnSystemCall(syscallUUID, 0);
+    return;
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
