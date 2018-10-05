@@ -38,6 +38,7 @@ void TCPAssignment::initialize()
     sock_list.clear();
     bind_list.clear();
     cli_list.clear();
+    reversed_cli_list.clear();
     svr_list.clear();
     estab_list.clear();
     listenq.clear();
@@ -94,6 +95,17 @@ bool TCPAssignment::find_cli(struct PidFd pidfd) {
     int flag = false;
     for (auto iter = cli_list.begin();iter != cli_list.end();iter++) {
         if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_reversed_cli(struct Sock sock) {
+    int flag = false;
+    for (auto iter = reversed_cli_list.begin();iter != reversed_cli_list.end();iter++) {
+        if (iter->first == sock) {
             flag = true;
             break;
         }
@@ -188,6 +200,36 @@ struct Sock *TCPAssignment::get_bind(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
+struct Sock *TCPAssignment::get_cli(struct PidFd pidfd) {
+    struct Sock *sock;
+    int flag = false;
+    for (auto iter = cli_list.begin();iter != cli_list.end();iter++) {
+        if (iter->first == pidfd) {
+            sock = &iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return sock;
+}
+
+// Shohuld be used after checking if find_* returns true
+struct PidFd *TCPAssignment::get_reversed_cli(struct Sock sock) {
+    struct PidFd *pidfd;
+    int flag = false;
+    for (auto iter = reversed_cli_list.begin();iter != reversed_cli_list.end();iter++) {
+        if (iter->first == sock) {
+            pidfd = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert (flag == true);
+    return pidfd;
+}
+
+// Should be used after checking if find_* returns true
 struct Sock *TCPAssignment::get_estab(struct PidFd pidfd) {
     struct Sock *sock;
     int flag = false;
@@ -200,6 +242,21 @@ struct Sock *TCPAssignment::get_estab(struct PidFd pidfd) {
     }
     assert(flag == true);
     return sock;
+}
+
+// Should be used after checking if find_* returns true
+uint32_t TCPAssignment::get_seq(struct PidFd pidfd) {
+    uint32_t s;
+    int flag = false;
+    for (auto iter = seq_list.begin();iter != seq_list.end();iter++) {
+        if (iter->first == pidfd) {
+            s = iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return s;
 }
 
 // Should be used after checking if find_* returns true
@@ -468,6 +525,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     uint32_t zero_4b = 0;
     uint8_t offset = 5;
     uint16_t window = htons((uint16_t)51200);
+    uint32_t syn = syn_val;
     packet->writeData(14 + 20 + 8, &zero_4b, 4);
     packet->writeData(14 + 20 + 12, &offset, 1);
     packet->writeData(14 + 20 + 13, &syn, 1);
@@ -490,6 +548,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     struct Sock *new_sock_cli = (struct Sock *)malloc(sizeof(struct Sock));
     memcpy(new_sock_cli, sock, sizeof(struct Sock));
     cli_list.insert(make_pair(pidfd, *new_sock_cli));
+    reversed_cli_list.insert(make_pair(*new_sock_cli, pidfd));
     uuid_list.insert(make_pair(pidfd, syscallUUID));
     this->sendPacket("IPv4", packet);
     return;
@@ -650,16 +709,108 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 {
-    //Simple L3 forwarding
-    //extract address
-    uint8_t src_ip[4];
-    uint8_t dest_ip[4]; packet->readData(14+12, src_ip, 4); packet->readData(14+16, dest_ip, 4);
-    Packet* myPacket = this->clonePacket(packet); //prepare to send
-    //swap src and dest
-    myPacket->writeData(14+12, dest_ip, 4); myPacket->writeData(14+16, src_ip, 4);
-    //IP module will fill rest of IP header, //send it to correct network interface this->sendPacket("IPv4", myPacket);
-    //given packet is my responsibility
+    // read data from packet
+    uint32_t src_ip;
+    packet->readData(14 + 12, &src_ip, 4);
+    uint32_t dst_ip;
+    packet->readData(14 + 16, &dst_ip, 4);
+    uint16_t src_port;
+    packet->readData(14 + 20 + 0, &src_port, 2);
+    uint16_t dst_port;
+    packet->readData(14 + 20 + 2, &dst_port, 2);
+    uint32_t seq;
+    packet->readData(14 + 20 + 4, &seq, 4); 
+    uint32_t ack;
+    packet->readData(14 + 20 + 8, &ack, 4);
+    uint16_t window;
+    packet->readData(14 + 20 + 14, &window, 2);
+    uint8_t flag;
+    packet->readData(14 + 20 + 13, &flag, 1);
+
+    // construct sock structure
+    struct sockaddr_in src_addr;
+    struct sockaddr_in dst_addr;
+    src_addr.sin_addr.s_addr = src_ip;
+    src_addr.sin_port = src_port;
+    dst_addr.sin_addr.s_addr = dst_ip;
+    dst_addr.sin_port = dst_port;
+    struct Sock sock = Sock(src_addr, dst_addr);
+
+    // change order
+    src_ip = ntohl(src_ip);
+    dst_ip = ntohl(dst_ip);
+    src_port = ntohs(src_port);
+    dst_port = ntohs(dst_port);
+    seq = ntohl(seq);
+    ack = ntohl(ack);
+    window = ntohs(window);
+
+    // create packet from cloned packet, for each case of flag
+    Packet *send_packet = this->clonePacket(packet);
+
+    switch (flag) {
+    case synack_val: {
+        // change value of src and dst address
+        swap(src_ip, dst_ip);
+        swap(src_port, dst_port);
+
+        // construct pidfd struct for list searching
+        struct PidFd *pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
+
+        // if corresponding pidfd does not exist, return
+        if (!find_reversed_cli(sock)) {
+            this->freePacket(packet);
+            this->freePacket(send_packet);
+            return;
+        }
+    
+        // copy pidfd from reversed_cli_list
+        memcpy(pidfd, get_reversed_cli(sock), sizeof(struct PidFd));
+        
+        // find seq with pidfd, if not exist, return
+        if (!find_seq(*pidfd)) {
+            this->freePacket(packet);
+            this->freePacket(send_packet);
+            return;
+        }
+            
+        // if seq + 1 != ack, meaning that ack inappropriate, return
+        if (get_seq(*pidfd) + 1 != ack) {
+            this->freePacket(packet);
+            this->freePacket(send_packet);
+            return;
+        }
+
+        // if corresponding sock not found, return
+        if (!find_cli(*pidfd)) {
+            this->freePacket(packet);
+            this->freePacket(send_packet);
+            return; 
+        }
+        
+        // if corresponding sock does not have syn_sent, return
+        if (get_cli(*pidfd)->state.compare("SYN_SENT") != 0) {
+            this->freePacket(packet);
+            this->freePacket(send_packet);
+            return;
+        }
+        break;
+        }
+    case syn_val: {
+        break;
+        }
+    case ack_val: {
+        break;
+        }
+    case fin_val: {
+        break;
+        }
+    default: {
+        break;
+        }
+    }
     this->freePacket(packet);
+    this->freePacket(send_packet);
 }
 
 void TCPAssignment::timerCallback(void* payload)

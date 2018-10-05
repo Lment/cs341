@@ -54,7 +54,18 @@ struct Sock {
         this->dst_addr = dst_addr;
         this->state = state;
     }
-    
+    bool operator<(const Sock& sock) const{
+        return !((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr) &&
+                (this->src_addr.sin_port == sock.src_addr.sin_port) &&
+                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr) &&
+                (this->dst_addr.sin_port == sock.dst_addr.sin_port));
+    }       
+    bool operator==(const Sock& sock) const{
+        return ((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr) &&
+                (this->src_addr.sin_port == sock.src_addr.sin_port) &&
+                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr) &&
+                (this->dst_addr.sin_port == sock.dst_addr.sin_port));
+    }
 };
 
 namespace E
@@ -79,6 +90,8 @@ protected:
     map<struct PidFd, struct Sock> bind_list;
     // unestablished connection(client pidfd - client sock)
     map<struct PidFd, struct Sock> cli_list;
+    // unestablished connection(client sock - client pidfd)
+    map<struct Sock, struct PidFd> reversed_cli_list;
     // unestablished connection(server pidfd - client socks)
     map<struct PidFd, set<struct Sock>> svr_list;
     // established connection(each pidfd - sock for server and client)
@@ -88,14 +101,15 @@ protected:
     // map pidfd and UUID for unblocking(accept, connect)
     map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
-    map<struct PidFd, int> seq_list;
+    map<struct PidFd, uint32_t> seq_list;
     // all closed sockets
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
     int used_port[65536 - 1024] = {0};
-    uint8_t fin = 0b00000001;
-    uint8_t syn = 0b00000010;
-    uint8_t ack = 0b00010000;
+    static const uint8_t fin_val = 0b00000001;
+    static const uint8_t syn_val = 0b00000010;
+    static const uint8_t ack_val = 0b00010000;
+    static const uint8_t synack_val = syn_val + ack_val;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(string fromModule, Packet* packet) final;
@@ -104,6 +118,7 @@ protected:
     virtual bool find_sock(struct PidFd pidfd);
     virtual bool find_bind(struct PidFd pidfd);
     virtual bool find_cli(struct PidFd pidfd);
+    virtual bool find_reversed_cli(struct Sock sock);
     virtual bool find_svr(struct PidFd pidfd);
     virtual bool find_estab(struct PidFd pidfd);
     virtual bool find_uuid(struct PidFd pidfd);
@@ -112,7 +127,10 @@ protected:
 
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
+    virtual struct Sock *get_cli(struct PidFd pidfd);
+    virtual struct PidFd *get_reversed_cli(struct Sock sock);
     virtual struct Sock *get_estab(struct PidFd pidfd);
+    virtual uint32_t get_seq(struct PidFd pidfd);
     virtual queue<struct Sock> *get_listenq(struct PidFd pidfd);
 
     virtual void remove_sock(struct PidFd pidfd);
