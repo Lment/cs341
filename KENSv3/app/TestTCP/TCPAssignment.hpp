@@ -96,7 +96,9 @@ protected:
     map<struct PidFd, set<struct Sock>> svr_list;
     // established connection(each pidfd - sock for server and client)
     map<struct PidFd, struct Sock> estab_list;
-    // map server pidfd  and client side established connections
+    // established connection(each sock - pidfd for server and client)
+    map<struct Sock, struct PidFd> reversed_estab_list;
+    // map server pidfd and client side established connections
     map<struct PidFd, queue<struct Sock>> listenq;
     // map pidfd and UUID for unblocking(accept, connect)
     map<struct PidFd, UUID> uuid_list;
@@ -106,10 +108,10 @@ protected:
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
     int used_port[65536 - 1024] = {0};
-    static const uint8_t fin_val = 0b00000001;
-    static const uint8_t syn_val = 0b00000010;
-    static const uint8_t ack_val = 0b00010000;
-    static const uint8_t synack_val = syn_val + ack_val;
+    static const uint8_t fin_flag = 0b00000001;
+    static const uint8_t syn_flag = 0b00000010;
+    static const uint8_t ack_flag = 0b00010000;
+    static const uint8_t synack_flag = syn_flag + ack_flag;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(string fromModule, Packet* packet) final;
@@ -131,11 +133,13 @@ protected:
     virtual struct PidFd *get_reversed_cli(struct Sock sock);
     virtual struct Sock *get_estab(struct PidFd pidfd);
     virtual uint32_t get_seq(struct PidFd pidfd);
+    virtual UUID get_uuid(struct PidFd pidfd);
     virtual queue<struct Sock> *get_listenq(struct PidFd pidfd);
 
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
     virtual void remove_cli(struct PidFd pidfd);
+    virtual void remove_reversed_cli(struct Sock sock);
     virtual void remove_svr(struct PidFd pidfd);
     virtual void remove_estab(struct PidFd pidfd);
     virtual void remove_uuid(struct PidFd pidfd);
