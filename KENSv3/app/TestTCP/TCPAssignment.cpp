@@ -574,7 +574,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     sock->state = "SYN_SENT";
     sock->src_addr = tmp_addr_in;
     sock->dst_addr = *svr_addr_in;
-    //printf("added %d %d %d %d\n", sock->src_addr.sin_addr.s_addr, sock->src_addr.sin_port, sock->dst_addr.sin_addr.s_addr, sock->dst_addr.sin_port);
 
     struct Sock *new_sock_cli = (struct Sock *)malloc(sizeof(struct Sock));
     memcpy(new_sock_cli, sock, sizeof(struct Sock));
@@ -767,7 +766,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     dst_addr.sin_addr.s_addr = dst_ip;
     dst_addr.sin_port = dst_port;
     struct Sock sock = Sock(src_addr, dst_addr);
-    //printf("copied %d %d %d %d\n", sock.src_addr.sin_addr.s_addr, sock.src_addr.sin_port, sock.dst_addr.sin_addr.s_addr, sock.dst_addr.sin_port);
 
     // change order
     src_ip = ntohl(src_ip);
