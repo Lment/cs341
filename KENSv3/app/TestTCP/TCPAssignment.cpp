@@ -596,20 +596,20 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
 
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
-    ////printf("Does connect called\n");
+    //////printf("Does connect called\n");
 
     // make pidfd and sockaddr_in structure
     struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *svr_addr_in = (sockaddr_in *)addr;
 
-    ////printf("connect part 1\n");
+    //////printf("connect part 1\n");
     // check if the socket is valid and has closed state
     if ((!find_sock(pidfd)) ||
         (get_sock(pidfd)->state.compare("CLOSED") != 0)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
-    ////printf("connect part 2\n");
+    //////printf("connect part 2\n");
 
     // ip address and port should be in network order
     // save destination address
@@ -752,41 +752,41 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 */
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
-    //printf("Does accept called\n");
+    ////printf("Does accept called\n");
     struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
-    ////printf("Accept part 1\n");
+    //////printf("Accept part 1\n");
     if (!find_listenq(pidfd)) {
         returnSystemCall(syscallUUID, -1);
     }
-    //printf("Edge case 1 pass\n");
-    ////printf("Accept part 2\n");
+    ////printf("Edge case 1 pass\n");
+    //////printf("Accept part 2\n");
     if (!find_completeq(pidfd)) {
         returnSystemCall(syscallUUID, -1);
     }
-    //printf("Edge case 2 pass\n");
-    ////printf("Accept part3\n");
+    ////printf("Edge case 2 pass\n");
+    //////printf("Accept part3\n");
     auto *cq = get_completeq(pidfd);
  
 
-    //printf("cq size before accept is %d\n", cq->size());
+    ////printf("cq size before accept is %d\n", cq->size());
     if (cq->empty()) { // block accept()
-        //printf("Accept case1\n");
+        ////printf("Accept case1\n");
         auto iter = accept_info_list.find(pidfd);
-        //printf("accept info list size is %d\n", iter->second.size());
+        ////printf("accept info list size is %d\n", iter->second.size());
         if (iter != accept_info_list.end()) {
-            printf("accept 1-1 before %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter->second.size());
+            //printf("accept 1-1 before %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter->second.size());
             iter->second.insert(make_pair(syscallUUID, make_pair(addr, addrlen)));
-            printf("accept 1-1 after %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter->second.size());
+            //printf("accept 1-1 after %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter->second.size());
         } else {
             set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
             new_set.insert(make_pair(syscallUUID, make_pair(addr, addrlen)));
             accept_info_list.insert(make_pair(pidfd, new_set));
-            auto iter2 = accept_info_list.find(pidfd);
-            printf("accept 1-2 after %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter2->second.size());
+            //auto iter2 = accept_info_list.find(pidfd);
+            //printf("accept 1-2 after %d %d, blocked size is %d\n", pidfd.pid, pidfd.fd, iter2->second.size());
         }
     } else { // consume one connnection
-        //printf("Accept case2\n");
+        ////printf("Accept case2\n");
         struct Sock consumed_sock = cq->front();
         cq->pop();
 
@@ -899,7 +899,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     uint32_t dst_ip;
     packet->readData(14 + 12, &dst_ip, 4);
     packet->readData(14 + 16, &src_ip, 4);
-    ////printf("src is %d, dst is %d\n", src_ip, dst_ip);
+    //////printf("src is %d, dst is %d\n", src_ip, dst_ip);
     uint16_t src_port;
     uint16_t dst_port;
     packet->readData(14 + 20 + 0, &dst_port, 2);
@@ -925,7 +925,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     // change order
     src_ip = ntohl(src_ip);
     dst_ip = ntohl(dst_ip);
-    ////printf("now src is %d, dst is %d\n", src_ip, dst_ip);
+    //////printf("now src is %d, dst is %d\n", src_ip, dst_ip);
     src_port = ntohs(src_port);
     dst_port = ntohs(dst_port);
     seq_num = ntohl(seq_num);
@@ -1043,31 +1043,31 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     */
     case syn_flag: {
         // server get syn from client connect
-        // printf("SYN!\n");
+        // //printf("SYN!\n");
         
         struct Sock temp_sock;
         struct PidFd temp_pidfd;
         bool flag = false;
     
-        ////printf("sock list size is %d\n", sock_list.size());
-        ////printf("bind list size is %d\n", bind_list.size());
+        //////printf("sock list size is %d\n", sock_list.size());
+        //////printf("bind list size is %d\n", bind_list.size());
         //if (sock_list.empty()) {
-        //    //printf("sock list is empty\n");
+        //    ////printf("sock list is empty\n");
         //}
         //!!!!!!!!!CHANGE FROM BIND TO LISTEN!!!!!!!!!!!!
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
-            ////printf("%d %d %d %d\n", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, htonl(src_ip), htons(src_port));
+            //////printf("%d %d %d %d\n", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, htonl(src_ip), htons(src_port));
             if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
                 (iter->second.src_addr.sin_addr.s_addr == 0)) &&
                 (iter->second.src_addr.sin_port == htons(src_port))) {
-                    ////printf("IN IF\n");
+                    //////printf("IN IF\n");
                     temp_pidfd = iter->first;
                     temp_sock = iter->second;
                     flag = true;
                     break;
             }
         }
-        //printf("SYN part1\n");
+        ////printf("SYN part1\n");
 
         if (!flag) {
             this->freePacket(packet);
@@ -1076,7 +1076,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
 
         bool simul_case = false;
-        //printf("SYN part2\n");
+        ////printf("SYN part2\n");
         if (temp_sock.state.compare("LISTEN") != 0) {
             if (temp_sock.state.compare("SYN_SENT") != 0) {
                 this->freePacket(packet);
@@ -1087,18 +1087,18 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             }
         }
 
-        //printf("SYN part3\n");
+        ////printf("SYN part3\n");
 
         if (simul_case) { // simultaneous case
-            // //printf("simultaneous cae\n");
+            // ////printf("simultaneous cae\n");
             seq_num = 0;
             uint8_t ack = ack_flag;
             send->writeData(14 + 20 + 13, &ack, 1);
         } else {
-            // //printf("not simul case\n");
+            // ////printf("not simul case\n");
 
             if (!find_listenq(temp_pidfd)) {
-                //printf("candidate 1\n");
+                ////printf("candidate 1\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
@@ -1107,10 +1107,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             auto *lq = get_listenq(temp_pidfd);
             int backlog_size = lq->first;
             auto *this_lq = &lq->second;
-            //printf("listenq size is %d backlog limit is %d\n", (int)this_lq->size(), backlog_size);
+            ////printf("listenq size is %d backlog limit is %d\n", (int)this_lq->size(), backlog_size);
             if ((int)this_lq->size() >= backlog_size) {
-                //printf("candidate 2\n");
-                // //printf("OVER BACKLOG\n");
+                ////printf("candidate 2\n");
+                // ////printf("OVER BACKLOG\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
@@ -1163,28 +1163,28 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         send->writeData(14 + 20 + 16, &checksum, 2);
 
         this->sendPacket("IPv4", send);
-        ////printf("packet sent\n");
+        //////printf("packet sent\n");
         break;
         }
     case ack_flag: {
-        // printf("ACK!\n");
+        // //printf("ACK!\n");
         //struct Sock *temp_sock = (struct Sock *)malloc(sizeof(struct Sock));
         struct PidFd temp_pidfd;
         bool flag = false;
     
-        ////printf("sock list size is %d\n", sock_list.size());
-        ////printf("bind list size is %d\n", bind_list.size());
+        //////printf("sock list size is %d\n", sock_list.size());
+        //////printf("bind list size is %d\n", bind_list.size());
         //if (sock_list.empty()) {
-        //    //printf("sock list is empty\n");
+        //    ////printf("sock list is empty\n");
         //}
 
         //!!!!!!!!!CHANGE FROM BIND TO LISTEN!!!!!!!!!!!!
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
-            // printf("%d %d %d %d\n", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, htonl(src_ip), htons(src_port));
+            // //printf("%d %d %d %d\n", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, htonl(src_ip), htons(src_port));
             if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
                 (iter->second.src_addr.sin_addr.s_addr == 0)) &&
                 (iter->second.src_addr.sin_port == htons(src_port))) {
-                    //printf("IN IF\n");
+                    ////printf("IN IF\n");
                     temp_pidfd = iter->first;
                     //memcpy(temp_sock, find_bind(temp_pidfd), sizeof(struct Sock));
                     //temp_sock = iter->second;
@@ -1192,7 +1192,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     break;
             }
         }
-        //printf("ACK part1\n");
+        ////printf("ACK part1\n");
 
         if (!flag) {
             this->freePacket(packet);
@@ -1244,19 +1244,19 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             }
 
             if (find_accept_info(temp_pidfd)) {
-                //printf("ACK part 2\n");
+                ////printf("ACK part 2\n");
                 auto *accept_info = get_accept_info(temp_pidfd);
                 if (!accept_info->empty()) { // some blocked accept call
-                    // printf("ACK part 2-2\n");
+                    // //printf("ACK part 2-2\n");
                     UUID uuid = accept_info->begin()->first;
                     struct sockaddr_in *addr_in = (struct sockaddr_in *)accept_info->begin()->second.first;
                     memcpy(addr_in, &unestab_sock->dst_addr, sizeof(struct sockaddr_in));
                     //socklen_t *len_t = accept_info->begin()->second.second;
                     //*len_t = (socklen_t)sizeof(sockaddr_in);
-                    printf("2-2(before): blocked accept number is %d\n", accept_info->size());
+                    //printf("2-2(before): blocked accept number is %d\n", accept_info->size());
                     accept_info->erase(accept_info->begin());
-                    printf("2-2(after): blocked accept number is %d\n", accept_info->size());
-                    //printf("blocked number is now %d\n", accept_info->size());
+                    //printf("2-2(after): blocked accept number is %d\n", accept_info->size());
+                    ////printf("blocked number is now %d\n", accept_info->size());
                     int new_fd = createFileDescriptor(temp_pidfd.pid);
                     struct PidFd new_pidfd = PidFd(temp_pidfd.pid, new_fd);
                     unestab_sock->state = "ESTAB";
@@ -1266,33 +1266,33 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
                     auto *lq = &get_listenq(temp_pidfd)->second;
                     for (auto iter = lq->begin();iter != lq->end();iter++) {
-                        //printf("removing listenq\n");
+                        ////printf("removing listenq\n");
                         if (*iter == *unestab_sock) {
-                            //printf("IN IF\n");
+                            ////printf("IN IF\n");
                             lq->erase(iter);
                             break;
                         }
                     }
                     returnSystemCall(uuid, new_fd);
                 } else { // no blocked accept call
-                    printf("2-3: blocked accept number is %d\n", accept_info->size());
+                    //printf("2-3: blocked accept number is %d\n", accept_info->size());
                     auto *lq = &get_listenq(temp_pidfd)->second;
                     auto *cq = get_completeq(temp_pidfd);
                     unestab_sock->state = "ESTAB";
                     for (auto iter = lq->begin();iter != lq->end();iter++) {
-                        //printf("IN listenq\n");
+                        ////printf("IN listenq\n");
                         if (*iter == *unestab_sock) {
-                            //printf("FOUND\n");
+                            ////printf("FOUND\n");
                             lq->erase(iter);
                             break;
                         }
                     }
-                    printf("size of cq before %d\n", cq->size());
+                    //printf("size of cq before %d\n", cq->size());
                     cq->push(*unestab_sock);
-                    printf("size of cq after  %d\n", cq->size());
+                    //printf("size of cq after  %d\n", cq->size());
                 }
             } else {
-                // printf("ACK part 3\n");
+                // //printf("ACK part 3\n");
                 set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
                 accept_info_list.insert(make_pair(temp_pidfd, new_set));
 
