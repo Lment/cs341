@@ -41,29 +41,49 @@ struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
     string state = "CLOSED";
-    Sock(){}
+    uint32_t seq;
+    Sock(){
+        this->src_addr.sin_family = AF_INET;
+        this->dst_addr.sin_family = AF_INET;
+    }
     Sock(struct sockaddr_in src_addr) {
         this->src_addr = src_addr;
+        this->src_addr.sin_family = AF_INET;
+        this->dst_addr.sin_family = AF_INET;
+        //this->dst_addr.sin_port = 0;
+        //this->dst_addr.sin_addr.s_addr = 0;
     }
     Sock(struct sockaddr_in src_addr, struct sockaddr_in dst_addr) {
         this->src_addr = src_addr;
         this->dst_addr = dst_addr;
+        this->src_addr.sin_family = AF_INET;
+        this->dst_addr.sin_family = AF_INET;
     }
     Sock(struct sockaddr_in src_addr, struct sockaddr_in dst_addr, string state) {
         this->src_addr = src_addr;
         this->dst_addr = dst_addr;
         this->state = state;
+        this->src_addr.sin_family = AF_INET;
+        this->dst_addr.sin_family = AF_INET;
     }
     bool operator<(const Sock& sock) const{
-        return !((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr) &&
+        return !((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr ||
+                this->src_addr.sin_addr.s_addr == 0||
+                sock.src_addr.sin_addr.s_addr == 0) &&
                 (this->src_addr.sin_port == sock.src_addr.sin_port) &&
-                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr) &&
+                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr ||
+                this->dst_addr.sin_addr.s_addr == 0 ||
+                sock.dst_addr.sin_addr.s_addr == 0) &&
                 (this->dst_addr.sin_port == sock.dst_addr.sin_port));
     }       
     bool operator==(const Sock& sock) const{
-        return ((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr) &&
+        return ((this->src_addr.sin_addr.s_addr == sock.src_addr.sin_addr.s_addr ||
+                this->src_addr.sin_addr.s_addr == 0||
+                sock.src_addr.sin_addr.s_addr == 0) &&
                 (this->src_addr.sin_port == sock.src_addr.sin_port) &&
-                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr) &&
+                (this->dst_addr.sin_addr.s_addr == sock.dst_addr.sin_addr.s_addr ||
+                this->dst_addr.sin_addr.s_addr == 0 ||
+                sock.dst_addr.sin_addr.s_addr == 0) &&
                 (this->dst_addr.sin_port == sock.dst_addr.sin_port));
     }
 };
@@ -93,7 +113,7 @@ protected:
     // unestablished connection(client sock - client pidfd)
     map<struct Sock, struct PidFd> reversed_cli_list;
     // unestablished connection(server pidfd - client socks)
-    map<struct PidFd, struct Sock> svr_list;
+    map<struct PidFd, set<struct Sock>> svr_list;
     // unestablished connection
     map<struct Sock, struct PidFd> reversed_svr_list;
     // established connection(each pidfd - sock for server and client)
@@ -101,7 +121,7 @@ protected:
     // established connection(each sock - pidfd for server and client)
     map<struct Sock, struct PidFd> reversed_estab_list;
     // map server pidfd and pair of backlog and not established(just get syn) connections
-    map<struct PidFd, pair<int, queue<struct Sock>>> listenq;
+    map<struct PidFd, pair<int, set<struct Sock>>> listenq;
     // map server pidfd and established connections waiting for accept
     map<struct PidFd, queue<struct Sock>> completeq;
     // map pidfd and UUID for unblocking(accept, connect)
@@ -109,7 +129,7 @@ protected:
     // map pidfd and seq number for handshaking
     map<struct PidFd, uint32_t> seq_list;
     // map pidfd and corresponding blocked accept's addr, addrlen pointer
-    map<struct PidFd, pair<struct sockaddr *, socklen_t *>> accept_info_list;
+    map<struct PidFd, set<pair<UUID, pair<struct sockaddr *, socklen_t *>>>> accept_info_list;
     // all closed sockets
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
@@ -133,17 +153,20 @@ protected:
     virtual bool find_completeq(struct PidFd pidfd);
     virtual bool find_uuid(struct PidFd pidfd);
     virtual bool find_seq(struct PidFd pidfd);
+    virtual bool find_accept_info(struct PidFd pidfd);
 
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
     virtual struct Sock *get_cli(struct PidFd pidfd);
     virtual struct PidFd *get_reversed_cli(struct Sock sock);
+    virtual set<struct Sock> *get_svr(struct PidFd pifd);
     virtual struct Sock *get_estab(struct PidFd pidfd);
-    virtual pair<int, queue<struct Sock>> *get_listenq(struct PidFd pidfd);
+    virtual pair<int, set<struct Sock>> *get_listenq(struct PidFd pidfd);
     virtual queue<struct Sock> *get_completeq(struct PidFd pidfd);
     virtual uint32_t get_seq(struct PidFd pidfd);
     virtual UUID get_uuid(struct PidFd pidfd);
-
+    virtual set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> *get_accept_info(struct PidFd pidfd);
+ 
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
     virtual void remove_cli(struct PidFd pidfd);
