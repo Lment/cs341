@@ -43,6 +43,7 @@ void TCPAssignment::initialize()
     estab_list.clear();
     reversed_estab_list.clear();
     listenq.clear();
+    completeq.clear();
     uuid_list.clear();
     seq_list.clear();
 }
@@ -170,6 +171,18 @@ bool TCPAssignment::find_listenq(struct PidFd pidfd) {
     return flag;
 }
 
+bool TCPAssignment::find_completeq(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = completeq.begin();iter != completeq.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+
 // Should be used after checking if find_* returns true
 struct Sock *TCPAssignment::get_sock(struct PidFd pidfd) {
     struct Sock *sock;
@@ -276,10 +289,26 @@ UUID TCPAssignment::get_uuid(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
-queue<struct Sock> *TCPAssignment::get_listenq(struct PidFd pidfd) {
-    queue<struct Sock> *lq;
+pair<int, queue<struct Sock>> *TCPAssignment::get_listenq(struct PidFd pidfd) {
+    pair<int, queue<struct Sock>> *lq;
     int flag = false;
     for (auto iter = listenq.begin();iter != listenq.end();iter++) {
+        if (iter->first == pidfd) {
+            lq = &iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return lq;
+}
+
+
+// Should be used after checking if find_* returns true
+queue<struct Sock> *TCPAssignment::get_completeq(struct PidFd pidfd) {
+    queue<struct Sock> *lq;
+    int flag = false;
+    for (auto iter = completeq.begin();iter != completeq.end();iter++) {
         if (iter->first == pidfd) {
             lq = &iter->second;
             flag = true;
@@ -374,6 +403,16 @@ void TCPAssignment::remove_listenq(struct PidFd pidfd) {
     for (auto iter = listenq.begin();iter != listenq.end();iter++) {
         if (iter->first == pidfd) {
             listenq.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_completeq(struct PidFd pidfd) {
+    for (auto iter = completeq.begin();iter != completeq.end();iter++) {
+        if (iter->first == pidfd) {
+            completeq.erase(iter);
             break;
          }
     }
@@ -585,6 +624,19 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     return;
 }
 
+/* connection handling mechanism
+    0. listen
+        (1) initialize listenq with backlog size
+        (2) initialize completeq
+    1. connect before accept
+        (1) Get SYN, add to listenq
+        (2) GET ACK, remove from listenq, add to completeq
+        (3) Accept called, consume from completeq, add to estab_list, remove from svr_list and reversed_svr_list, and return
+    2. connect after accept
+        (1) Accept is blocked, saving uuid, addr, addrlen, new fd
+        (2) GET ACK, handle the block accept, handle sock list  and return here
+*/
+
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlog) {
     /* TODO
         1v. check sock_list, return -1 if not exists
@@ -593,7 +645,6 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
         4v. change socket state to Listen
         5 . handle backlog
     */
-/*
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -601,9 +652,9 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
         return;
     }
     
-    struct Sock sock = get_sock(pidfd);
+    struct Sock *sock = get_sock(pidfd);
 
-    if (sock.state.compare("CLOSED") != 0) {
+    if (sock->state.compare("CLOSED") != 0) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
@@ -613,46 +664,59 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
         return;
     }
 
-    sock.state = "LISTEN";
-    struct Sock sock2 = get_bind(pidfd);
-    sock2.state = "LISTEN";
+    sock->state = "LISTEN";
+    struct Sock *sock2 = get_bind(pidfd);
+    sock2->state = "LISTEN";
+    int b_log = backlog;
+    queue<struct Sock> this_listenq;
+    queue<struct Sock> this_completeq;
+    listenq.insert(make_pair(pidfd, make_pair(b_log, this_listenq)));
+    completeq.insert(make_pair(pidfd, this_completeq));
 
     returnSystemCall(syscallUUID, 0);
     return;
-*/
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
-    /* TODO
-    */
-/*    struct PidFd pidfd = PidFd(pid, fd);
+    struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
     if (!find_listenq(pidfd)) {
         returnSystemCall(syscallUUID, -1);
     }
+    
+    if (!find_completeq(pidfd)) {
+        returnSystemCall(syscallUUID, -1);
+    }
 
-    auto lq = get_listenq(pidfd);
-    if (lq.empty()) { // block accept()
-        uuid_list.insert(make_pair(pidfd, syscallUUID));
+    auto *cq = get_completeq(pidfd);
+
+    int new_fd = createFileDescriptor(pid);
+    struct PidFd new_pidfd = PidFd(pid, new_fd);
+    struct Sock *svr_sock = get_sock(pidfd);
+    struct Sock new_sock = Sock(svr_sock->src_addr);
+
+    if (cq->empty()) { // block accept()
+        // add to svr_list, reversed_svr_list, accept_info_list, uuid_list
+        svr_list.insert(make_pair(new_pidfd, new_sock));
+        reversed_svr_list.insert(make_pair(new_sock, new_pidfd));
+        accept_info_list.insert(make_pair(new_pidfd, make_pair(addr, addrlen)));
+        uuid_list.insert(make_pair(new_pidfd, syscallUUID));
     } else { // consume one connnection
-        int new_fd = createFileDescriptor(pid);
-        
-        struct PidFd new_pidfd = PidFd(pid, new_fd);
-        
-        struct Sock svr_sock = get_sock(pidfd);
-        struct Sock new_sock = Sock(svr_sock.src_addr);
+
+        struct Sock consumed_sock = cq->front();
+        cq->pop();
+
+        new_sock.state = "ESTAB";
+        new_sock.dst_addr = consumed_sock.dst_addr;
         
         sock_list.insert(make_pair(new_pidfd, new_sock));
         estab_list.insert(make_pair(new_pidfd, new_sock));
 
-        struct Sock cli_sock = lq.front();
-        lq.pop();
-        memcpy(addr_in, &cli_sock, sizeof(struct sockaddr_in));
+        memcpy(addr_in, &consumed_sock.dst_addr, sizeof(struct sockaddr_in));
         *addrlen = sizeof(sockaddr_in);
         returnSystemCall(syscallUUID, new_fd);
-
-    } */
+    }
     return;
 
     /*

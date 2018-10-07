@@ -93,17 +93,23 @@ protected:
     // unestablished connection(client sock - client pidfd)
     map<struct Sock, struct PidFd> reversed_cli_list;
     // unestablished connection(server pidfd - client socks)
-    map<struct PidFd, set<struct Sock>> svr_list;
+    map<struct PidFd, struct Sock> svr_list;
+    // unestablished connection
+    map<struct Sock, struct PidFd> reversed_svr_list;
     // established connection(each pidfd - sock for server and client)
     map<struct PidFd, struct Sock> estab_list;
     // established connection(each sock - pidfd for server and client)
     map<struct Sock, struct PidFd> reversed_estab_list;
-    // map server pidfd and client side established connections
-    map<struct PidFd, queue<struct Sock>> listenq;
+    // map server pidfd and pair of backlog and not established(just get syn) connections
+    map<struct PidFd, pair<int, queue<struct Sock>>> listenq;
+    // map server pidfd and established connections waiting for accept
+    map<struct PidFd, queue<struct Sock>> completeq;
     // map pidfd and UUID for unblocking(accept, connect)
     map<struct PidFd, UUID> uuid_list;
     // map pidfd and seq number for handshaking
     map<struct PidFd, uint32_t> seq_list;
+    // map pidfd and corresponding blocked accept's addr, addrlen pointer
+    map<struct PidFd, pair<struct sockaddr *, socklen_t *>> accept_info_list;
     // all closed sockets
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 
@@ -123,18 +129,20 @@ protected:
     virtual bool find_reversed_cli(struct Sock sock);
     virtual bool find_svr(struct PidFd pidfd);
     virtual bool find_estab(struct PidFd pidfd);
+    virtual bool find_listenq(struct PidFd pidfd);
+    virtual bool find_completeq(struct PidFd pidfd);
     virtual bool find_uuid(struct PidFd pidfd);
     virtual bool find_seq(struct PidFd pidfd);
-    virtual bool find_listenq(struct PidFd pidfd);
 
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
     virtual struct Sock *get_cli(struct PidFd pidfd);
     virtual struct PidFd *get_reversed_cli(struct Sock sock);
     virtual struct Sock *get_estab(struct PidFd pidfd);
+    virtual pair<int, queue<struct Sock>> *get_listenq(struct PidFd pidfd);
+    virtual queue<struct Sock> *get_completeq(struct PidFd pidfd);
     virtual uint32_t get_seq(struct PidFd pidfd);
     virtual UUID get_uuid(struct PidFd pidfd);
-    virtual queue<struct Sock> *get_listenq(struct PidFd pidfd);
 
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
@@ -145,6 +153,7 @@ protected:
     virtual void remove_uuid(struct PidFd pidfd);
     virtual void remove_seq(struct PidFd pidfd);
     virtual void remove_listenq(struct PidFd pidfd);
+    virtual void remove_completeq(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
