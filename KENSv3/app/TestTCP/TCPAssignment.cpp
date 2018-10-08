@@ -194,7 +194,6 @@ bool TCPAssignment::find_accept_info(struct PidFd pidfd) {
     return flag;
 }
 
-
 // Should be used after checking if find_* returns true
 struct Sock *TCPAssignment::get_sock(struct PidFd pidfd) {
     struct Sock *sock;
@@ -674,10 +673,12 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
 
     struct Sock *new_sock_cli = (struct Sock *)malloc(sizeof(struct Sock));
     memcpy(new_sock_cli, sock, sizeof(struct Sock));
+
     bind_list.insert(make_pair(pidfd, *new_sock_cli));
     cli_list.insert(make_pair(pidfd, *new_sock_cli));
     reversed_cli_list.insert(make_pair(*new_sock_cli, pidfd));
     uuid_list.insert(make_pair(pidfd, syscallUUID));
+
     this->sendPacket("IPv4", packet);
     return;
 }
@@ -718,9 +719,11 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
     sock->state = "LISTEN";
     struct Sock *sock2 = get_bind(pidfd);
     sock2->state = "LISTEN";
+
     int b_log = backlog;
     set<struct Sock> this_listenq;
     queue<struct Sock> this_completeq;
+
     listenq.insert(make_pair(pidfd, make_pair(b_log, this_listenq)));
     completeq.insert(make_pair(pidfd, this_completeq));
 
@@ -996,11 +999,13 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         
         struct Sock temp_sock;
         struct PidFd temp_pidfd;
+
         bool flag = false;
 
         /* #########################################
            ## CHANGE FROM BIND LIST TO LISTEN LIST##
            ######################################### */
+
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
             if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
                 (iter->second.src_addr.sin_addr.s_addr == 0)) &&
@@ -1044,6 +1049,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             auto *lq = get_listenq(temp_pidfd);
             int backlog_size = lq->first;
             auto *this_lq = &lq->second;
+
             if ((int)this_lq->size() >= backlog_size) {
                 this->freePacket(packet);
                 this->freePacket(send);
@@ -1101,11 +1107,13 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
     case ack_flag: {
         struct PidFd temp_pidfd;
+
         bool flag = false;
     
         /* #########################################
            ## CHANGE FROM BIND LIST TO LISTEN LIST##
            ######################################### */
+
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
             if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
                 (iter->second.src_addr.sin_addr.s_addr == 0)) &&
@@ -1128,9 +1136,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
             if (iter->first == temp_pidfd) {
                 auto *set_ptr = &iter->second;
+
                 /* ############################################################
                    ## CHANGE find built-in to new defined iterating function ##
                    ############################################################ */
+
                 auto iter = set_ptr->find(sock);
                 struct Sock *tmp_sock_ptr = (struct Sock *)&(*set_ptr->find(sock));
                 memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
@@ -1175,14 +1185,19 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     memcpy(addr_in, &unestab_sock->dst_addr, sizeof(struct sockaddr_in));
                     //socklen_t *len_t = accept_info->begin()->second.second;
                     //*len_t = (socklen_t)sizeof(sockaddr_in);
+
                     accept_info->erase(accept_info->begin());
+ 
                     int new_fd = createFileDescriptor(temp_pidfd.pid);
                     struct PidFd new_pidfd = PidFd(temp_pidfd.pid, new_fd);
+
                     unestab_sock->state = "ESTAB";
                     estab_list.insert(make_pair(new_pidfd, *unestab_sock));
+
                     struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
                     memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
                     sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
+
                     auto *lq = &get_listenq(temp_pidfd)->second;
                     for (auto iter = lq->begin();iter != lq->end();iter++) {
                         if (*iter == *unestab_sock) {
@@ -1190,32 +1205,39 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                             break;
                         }
                     }
+
                     returnSystemCall(uuid, new_fd);
                 } else { // no blocked accept call
+                    unestab_sock->state = "ESTAB";
+
                     auto *lq = &get_listenq(temp_pidfd)->second;
                     auto *cq = get_completeq(temp_pidfd);
-                    unestab_sock->state = "ESTAB";
+
                     for (auto iter = lq->begin();iter != lq->end();iter++) {
                         if (*iter == *unestab_sock) {
                             lq->erase(iter);
                             break;
                         }
                     }
+
                     cq->push(*unestab_sock);
                 }
             } else {
                 set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
                 accept_info_list.insert(make_pair(temp_pidfd, new_set));
 
+                unestab_sock->state = "ESTAB";
+ 
                 auto *lq = &get_listenq(temp_pidfd)->second;
                 auto *cq = get_completeq(temp_pidfd);
-                unestab_sock->state = "ESTAB";
+
                 for (auto iter = lq->begin();iter != lq->end();iter++) {
                     if (*iter == *unestab_sock) {
                         lq->erase(iter);
                         break;
                     }
                 }
+
                 cq->push(*unestab_sock);
             }
         }       
