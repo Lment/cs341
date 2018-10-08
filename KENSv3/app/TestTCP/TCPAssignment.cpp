@@ -645,7 +645,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
 
     // fill in extra data
     uint32_t zero_4b = 0;
-    uint8_t offset = 20;
+    uint8_t offset = 80;
     uint16_t window = htons((uint16_t)51200);
     uint32_t syn = syn_flag;
     packet->writeData(14 + 20 + 8, &zero_4b, 4);
