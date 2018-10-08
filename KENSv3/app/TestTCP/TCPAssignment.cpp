@@ -875,10 +875,12 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     packet->readData(14 + 20 + 4, &seq_num, 4); 
     uint32_t ack_num;
     packet->readData(14 + 20 + 8, &ack_num, 4);
-    uint16_t window;
-    packet->readData(14 + 20 + 14, &window, 2);
+    uint8_t offset;
+    packet->readData(14 + 20 + 12, &offset, 1);
     uint8_t flag;
     packet->readData(14 + 20 + 13, &flag, 1);
+    uint16_t window;
+    packet->readData(14 + 20 + 14, &window, 2);
 
     // construct sock structure
     struct sockaddr_in src_addr;
@@ -963,6 +965,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         send->writeData(14 + 20 + 0, &src_port, 2);
         send->writeData(14 + 20 + 2, &dst_port, 2);
         send->writeData(14 + 20 + 8, &ack_num, 4);
+        send->writeData(14 + 20 + 12, &offset, 1);
         send->writeData(14 + 20 + 13, &ack, 1);
         send->writeData(14 + 20 + 14, &window, 2);
          
@@ -1092,6 +1095,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         send->writeData(14 + 20 + 2, &dst_port, 2);
         send->writeData(14 + 20 + 4, &seq_num, 4);
         send->writeData(14 + 20 + 8, &ack_num, 4);
+        send->writeData(14 + 20 + 12, &offset, 1); 
         send->writeData(14 + 20 + 14, &window, 2);
 
         // calculate checksum
