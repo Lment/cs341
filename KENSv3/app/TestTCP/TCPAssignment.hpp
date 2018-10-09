@@ -104,32 +104,19 @@ public:
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
-    // all created sockets
-    map<struct PidFd, struct Sock> sock_list;
-    // all bound sockets
-    map<struct PidFd, struct Sock> bind_list;
-    // unestablished connection(client pidfd - client sock)
-    map<struct PidFd, struct Sock> cli_list;
-    // unestablished connection(client sock - client pidfd)
-    map<struct Sock, struct PidFd> reversed_cli_list;
-    // unestablished connection(server pidfd - client socks)
-    map<struct PidFd, set<struct Sock>> svr_list;
-    // unestablished connection
-    map<struct Sock, struct PidFd> reversed_svr_list;
-    // established connection(each pidfd - sock for server and client)
-    map<struct PidFd, struct Sock> estab_list;
-    // established connection(each sock - pidfd for server and client)
-    map<struct Sock, struct PidFd> reversed_estab_list;
-    // map server pidfd and pair of backlog and not established(just get syn) connections
-    map<struct PidFd, pair<int, set<struct Sock>>> listenq;
-    // map server pidfd and established connections waiting for accept
-    map<struct PidFd, queue<struct Sock>> completeq;
-    // map pidfd and UUID for unblocking(accept, connect)
-    map<struct PidFd, UUID> uuid_list;
-    // map pidfd and seq number for handshaking
-    map<struct PidFd, uint32_t> seq_list;
-    // map pidfd and corresponding blocked accept's addr, addrlen pointer
-    map<struct PidFd, set<pair<UUID, pair<struct sockaddr *, socklen_t *>>>> accept_info_list;
+    map<struct PidFd, struct Sock> sock_list; // created socket list
+    map<struct PidFd, struct Sock> bind_list; // bound socket list
+    map<struct PidFd, struct Sock> cli_list; // client unestablished connection having sent SYN
+    map<struct Sock, struct PidFd> reversed_cli_list; // reversed cli_list
+    map<struct PidFd, set<struct Sock>> svr_list; // server unestablished connection having received SYN sent SYNACK
+    map<struct Sock, struct PidFd> reversed_svr_list; // reversed svr_list
+    map<struct PidFd, struct Sock> estab_list; // established connection, if server, having received ACK, if client, having received SYNACK and sent ACK
+    map<struct Sock, struct PidFd> reversed_estab_list; // reversed estab_list
+    map<struct PidFd, pair<int, set<struct Sock>>> listenq; // map server pidfd and pair of (backlog and set of unestablished socket)
+    map<struct PidFd, queue<struct Sock>> completeq; // map server pidfd and set of established socket
+    map<struct PidFd, UUID> uuid_list; // map client pidfd and uuid for connect function call
+    map<struct PidFd, uint32_t> seq_list; // map pidfd and seq number sent by packet
+    map<struct PidFd, set<pair<UUID, pair<struct sockaddr *, socklen_t *>>>> accept_info_list; // map server pidfd and set of (UUID, (*, *)) for accept function call
     // all closed sockets
     // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
 

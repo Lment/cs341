@@ -819,7 +819,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	case SOCKET: // Project1
 		this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
-	case CLOSE: // Project1
+	case CLOSE: // Project1, 2-1
 		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
 	case READ:
@@ -1118,6 +1118,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
            ## CHANGE FROM BIND LIST TO LISTEN LIST##
            ######################################### */
 
+        // get the pid with src_addr of received packet
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
             if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
                 (iter->second.src_addr.sin_addr.s_addr == 0)) &&
@@ -1128,12 +1129,14 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             }
         }
 
+        // if corresponding pidfd not found, return immediately
         if (!flag) {
             this->freePacket(packet);
             this->freePacket(send);
             return;
         }
 
+        // create new socket and find unestablished socket from svr_list with the pidfd get from upper lines
         struct Sock *unestab_sock = (struct Sock *)malloc(sizeof(struct Sock));
 
         flag = false;
@@ -1154,6 +1157,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             }
         }
 
+        // if not found, return immediately
         if (!flag) {
             this->freePacket(packet);
             this->freePacket(send);
@@ -1162,7 +1166,8 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
         this->freePacket(send);
 
-        if (find_cli(temp_pidfd)) {
+
+        if (find_cli(temp_pidfd)) { // simultaneous case
             if (*unestab_sock == *get_cli(temp_pidfd)) {
                 struct Sock *cli_sock = (struct Sock *)malloc(sizeof(struct Sock));
                 memcpy(cli_sock, get_cli(temp_pidfd), sizeof(struct Sock));
@@ -1175,13 +1180,14 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->freePacket(packet);
                 return;
             }
-        } else {
+        } else { // not simultaneous case (server received ack from client)
+            // check the validity of ack number
             if (unestab_sock->seq + 1 != ack_num) {
                 this->freePacket(packet);
                 return;
             }
 
-            if (find_accept_info(temp_pidfd)) {
+            if (find_accept_info(temp_pidfd)) { // if accept is already called so that accept_info_list with temp_pidfd is initialized.
                 auto *accept_info = get_accept_info(temp_pidfd);
                 if (!accept_info->empty()) { // some blocked accept call
                     UUID uuid = accept_info->begin()->first;
@@ -1226,7 +1232,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                     cq->push(*unestab_sock);
                 }
-            } else {
+            } else { // if accept is not called yet, accept_info_list with temp_pidfd should be initialized with empty set first
                 set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
                 accept_info_list.insert(make_pair(temp_pidfd, new_set));
 
