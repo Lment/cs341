@@ -459,6 +459,25 @@ void TCPAssignment::remove_completeq(struct PidFd pidfd) {
     return;
 }
 
+void TCPAssignment::remove_reversed_estab(struct Sock sock) {
+    for (auto iter = reversed_estab_list.begin();iter != reversed_estab_list.end();iter++) {
+        if (iter->first == sock) {
+            reversed_estab_list.erase(iter);
+            break;
+        }
+    }
+    return;
+}
+
+void TCPAssignment::remove_accept_info(struct PidFd pidfd) {
+    for (auto iter = accept_info_list.begin();iter != accept_info_list.end();iter++) {
+        if (iter->first == pidfd) {
+            accept_info_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
 
 /* ####################
    ## Order          ##
@@ -486,21 +505,92 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-    removeFileDescriptor(pid, fd);
-    
     struct PidFd pidfd = PidFd(pid, fd);
 
-    remove_sock(pidfd);
-    remove_bind(pidfd);
-    remove_cli(pidfd);
-    remove_svr(pidfd);
-    remove_estab(pidfd);
-    remove_uuid(pidfd);
-    remove_seq(pidfd);
-    remove_listenq(pidfd);
+    if (!find_sock(pidfd)) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    }
 
-    returnSystemCall(syscallUUID, 0);
-    return;
+    struct Sock *estab_sock;
+    if (find_estab(pidfd)) {
+        estab_sock = get_estab(pidfd);
+        string s = estab_sock->state;
+        if (s.compare("ESTAB") == 0) {
+            estab_sock->state = "FIN_W1";
+        } else if (s.compare("CLOSE_W") == 0) {
+            estab_sock->state = "LAST_ACK";
+        } else {
+            returnSystemCall(syscallUUID, -1);
+            return;
+        }
+    
+        // create a new packet
+        Packet *packet = allocatePacket(54);
+        // write src/dst address to packet
+        packet->writeData(14 + 12, &estab_sock->src_addr.sin_addr.s_addr, 4);
+        packet->writeData(14 + 16, &estab_sock->dst_addr.sin_addr.s_addr, 4);
+        packet->writeData(14 + 20 + 0, &estab_sock->src_addr.sin_port, 2);
+        packet->writeData(14 + 20 + 2, &estab_sock->dst_addr.sin_port, 2);
+    
+        // write sequence number
+        estab_sock->seq = estab_sock->seq + 1;
+        uint32_t seq_num = htonl(estab_sock->seq);
+        packet->writeData(14 + 20 + 4, &seq_num, 4);
+
+        // fill in extra data
+        uint32_t zero_4b = 0;
+        uint8_t offset = 80;
+        uint16_t window = htons((uint16_t)51200);
+        uint32_t fin = fin_flag;
+        packet->writeData(14 + 20 + 8, &zero_4b, 4);
+        packet->writeData(14 + 20 + 12, &offset, 1);
+        packet->writeData(14 + 20 + 13, &fin, 1);
+        packet->writeData(14 + 20 + 14, &window, 2);
+        packet->writeData(14 + 20 + 16, &zero_4b, 4);
+
+        // calculate checksum
+        uint8_t *tcp_header = (uint8_t *)malloc(20);
+        packet->readData(14 + 20, tcp_header, 20);
+   
+        uint16_t checksum = ~(NetworkUtil::tcp_sum(estab_sock->src_addr.sin_addr.s_addr, estab_sock->dst_addr.sin_addr.s_addr, tcp_header, 20));
+        checksum = htons(checksum);
+        packet->writeData(14 + 20 + 16, &checksum, 2);
+
+        close_list.insert(make_pair(pidfd, syscallUUID));
+        this->sendPacket("IPv4", packet);
+        return;
+    } else {
+            if (find_listenq(pidfd)) {
+                int tmp_port = get_bind(pidfd)->src_addr.sin_port;
+                used_port[tmp_port] = 0;
+            }
+
+            remove_sock(pidfd);
+            remove_bind(pidfd);
+            remove_cli(pidfd);
+            if (find_cli(pidfd)) {
+                struct Sock cli_sock = *get_cli(pidfd);
+            remove_reversed_cli(cli_sock);
+            }
+            //struct Sock svr_sock = *get_svr(pidfd);
+            remove_svr(pidfd);
+            //remove_reversed_svr(svr_sock);
+            remove_estab(pidfd);
+            if (find_estab(pidfd)) {
+                struct Sock estab_sock = *get_estab(pidfd);
+                remove_reversed_estab(estab_sock);
+            }
+            remove_uuid(pidfd);
+            remove_seq(pidfd);
+            remove_listenq(pidfd);
+            remove_completeq(pidfd);
+            remove_accept_info(pidfd);
+
+            removeFileDescriptor(pid, fd);
+            returnSystemCall(syscallUUID, 0);
+            return;
+    }
 }
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
@@ -1071,11 +1161,13 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             if (!find_svr(temp_pidfd)) {
                 set<struct Sock> new_set;
                 sock.seq = seq_num;
+                sock.state = "SYN_RCVD";
                 new_set.insert(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
             } else {
                 set<struct Sock> *the_set = get_svr(temp_pidfd);
                 sock.seq = seq_num;
+                sock.state = "SYN_RCVD";
                 the_set->insert(sock);
             }
         }
@@ -1110,6 +1202,41 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case ack_flag: {
+/*
+702     else if(tcp_flag==ACK){
+703         this->freePacket(send_p);
+704         swap(src_ip,dest_ip),swap(src_port,dest_port);
+705 //      printf("ACK : %u %u\n",src_port,dest_port);
+706         if(ConnectionManager::get()->check(Connection(src_ip,dest_ip,src_port,dest_port))){ //client, close 3rd  or  server, close final
+707             auto pidfd=ConnectionManager::get()->getPidFd(Connection(src_ip,dest_ip,src_port,dest_port));
+708             int pid=pidfd.first,fd=pidfd.second;
+709
+710             if(pidfd==make_pair(-1,-1)){
+711                 this->freePacket(p);
+712                 return;
+713             }
+714             Connection con=ConnectionManager::get()->getConnection(pid,fd);
+715             if(!con.stat.compare("FIN_WAIT_1")){
+716                 ConnectionManager::get()->updateStat(pid,fd,"FIN_WAIT_2");
+717             }
+718             else if(!con.stat.compare("CLOSING")){
+719                 ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
+720                 timers[timer_n].pid=pid,timers[timer_n].fd=fd;
+721                 this->addTimer(&timers[timer_n],2);
+722             }
+723             else if(!con.stat.compare("LAST_ACK")){
+724                 removeFileDescriptor(pid,fd);
+725                 ConnectionManager::get()->erase(pid,fd);
+726                 if(BindManager::get()->check(pid,fd))BindManager::get()->erase(pid,fd);
+727                 returnSystemCall(CloseQueue::get()->popUUID(pid,fd),0);
+728             }
+729             else{
+730                 this->freePacket(p);
+731                 return;
+732             }
+733         }
+734         else{                           //server, handshake final or simultaneous connect
+*/
         struct PidFd temp_pidfd;
 
         bool flag = false;
@@ -1254,9 +1381,92 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case fin_flag: {
+/*
+781     else if(tcp_flag==FIN){
+782         swap(src_ip,dest_ip),swap(src_port,dest_port);
+783         int exception_flag=0;
+784         if(BindManager::get()->check(src_ip,src_port)){
+785             auto pidfd=BindManager::get()->getPidFd(src_ip,src_port);
+786             if(ListenQueue::get()->connect_queue.find(pidfd)!=ListenQueue::get()->connect_queue.end()){
+787                 for(auto &S:ListenQueue::get()->connect_queue[pidfd]){
+788                     if(S==Connection(src_ip,dest_ip,src_port,dest_port)){
+789                         updateConnectionStat(S,"CLOSE_WAIT");
+790                         exception_flag=1;
+791                     }
+792                 }
+793             }
+794         }
+795         if(exception_flag){
+796             acknum=seq+1;
+797             seq=0;
+798             src_ip=htonl(src_ip),send_p->writeData(14+12,&src_ip,4);
+799             dest_ip=htonl(dest_ip),send_p->writeData(14+16,&dest_ip,4);
+800             src_port=htons(src_port),send_p->writeData(34+0,&src_port,2);
+801             dest_port=htons(dest_port),send_p->writeData(34+2,&dest_port,2);
+802             seq=htonl(seq),send_p->writeData(34+4,&seq,4);
+803             acknum=htonl(acknum),send_p->writeData(34+8,&acknum,4);
+804             setTCPFlag(send_p,ACK);
+805             window_size=htons(window_size),send_p->writeData(34+14,&window_size,2);
+806             send_p->writeData(34+16,&z16,2);
+807             uint8_t tcp_data[20];
+808             send_p->readData(34,tcp_data,20);
+809             uint16_t csum=~NetworkUtil::tcp_sum(src_ip,dest_ip,tcp_data,20);
+810             csum=htons(csum);
+811             send_p->writeData(34+16,&csum,2);
+812
+813             this->sendPacket("IPv4",send_p);
+814             this->freePacket(p);
+815             return;
+816         }
+817         auto pidfd=ConnectionManager::get()->getPidFd(Connection(src_ip,dest_ip,src_port,dest_port));
+818         int pid=pidfd.first,fd=pidfd.second;
+819         if(pidfd==make_pair(-1,-1)){
+820             this->freePacket(p);
+821             this->freePacket(send_p);
+822             return;
+823         }
+824         Connection con=ConnectionManager::get()->getConnection(pid,fd);
+825         acknum=seq+1;
+826         seq=0;
+827         src_ip=htonl(src_ip),send_p->writeData(14+12,&src_ip,4);
+828         dest_ip=htonl(dest_ip),send_p->writeData(14+16,&dest_ip,4);
+829         src_port=htons(src_port),send_p->writeData(34+0,&src_port,2);
+830         dest_port=htons(dest_port),send_p->writeData(34+2,&dest_port,2);
+831         seq=htonl(seq),send_p->writeData(34+4,&seq,4);
+832         acknum=htonl(acknum),send_p->writeData(34+8,&acknum,4);
+833         setTCPFlag(send_p,ACK);
+834         window_size=htons(window_size),send_p->writeData(34+14,&window_size,2);
+835         send_p->writeData(34+16,&z16,2);
+836         uint8_t tcp_data[20];
+837         send_p->readData(34,tcp_data,20);
+838         uint16_t csum=~NetworkUtil::tcp_sum(src_ip,dest_ip,tcp_data,20);
+839         csum=htons(csum);
+840         send_p->writeData(34+16,&csum,2);
+841
+842         if(!con.stat.compare("FIN_WAIT_1")){
+843             ConnectionManager::get()->updateStat(pid,fd,"CLOSING");
+844         }
+845         else if(!con.stat.compare("FIN_WAIT_2")){
+846             ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
+847             timers[timer_n].pid=pid,timers[timer_n].fd=fd;
+848             this->addTimer(&timers[timer_n],2);
+849         }
+850         else if(!con.stat.compare("ESTABLISHED")){
+851             ConnectionManager::get()->updateStat(pid,fd,"CLOSE_WAIT");
+852         }
+853         else{
+854             this->freePacket(p);
+855             this->freePacket(send_p);
+856             return;
+857         }
+858         this->sendPacket("IPv4",send_p);
+859     }
+*/
         break;
         }
     default: {
+        this->freePacket(packet);
+        this->freePacket(send);
         break;
         }
     }

@@ -109,7 +109,7 @@ protected:
     map<struct PidFd, struct Sock> cli_list; // client unestablished connection having sent SYN
     map<struct Sock, struct PidFd> reversed_cli_list; // reversed cli_list
     map<struct PidFd, set<struct Sock>> svr_list; // server unestablished connection having received SYN sent SYNACK
-    map<struct Sock, struct PidFd> reversed_svr_list; // reversed svr_list
+    //map<struct Sock, struct PidFd> reversed_svr_list; // reversed svr_list
     map<struct PidFd, struct Sock> estab_list; // established connection, if server, having received ACK, if client, having received SYNACK and sent ACK
     map<struct Sock, struct PidFd> reversed_estab_list; // reversed estab_list
     map<struct PidFd, pair<int, set<struct Sock>>> listenq; // map server pidfd and pair of (backlog and set of unestablished socket)
@@ -118,7 +118,7 @@ protected:
     map<struct PidFd, uint32_t> seq_list; // map pidfd and seq number sent by packet
     map<struct PidFd, set<pair<UUID, pair<struct sockaddr *, socklen_t *>>>> accept_info_list; // map server pidfd and set of (UUID, (*, *)) for accept function call
     // all closed sockets
-    // map<struct PidFd, struct Sock> close_list; // all closed sockets(connections)
+    map<struct PidFd, UUID> close_list; // all closed sockets(connections)
 
     int used_port[65536 - 1024] = {0};
     static const uint8_t fin_flag = 0b00000001;
@@ -164,6 +164,8 @@ protected:
     virtual void remove_seq(struct PidFd pidfd);
     virtual void remove_listenq(struct PidFd pidfd);
     virtual void remove_completeq(struct PidFd pidfd);
+    virtual void remove_reversed_estab(struct Sock sock);
+    virtual void remove_accept_info(struct PidFd pidfd);
     
     virtual void syscall_socket(UUID syscallUUID, int pid, int type, int protocol);
     virtual void syscall_close(UUID syscallUUID, int pid, int fd);
