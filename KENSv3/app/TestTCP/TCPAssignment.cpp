@@ -138,10 +138,31 @@ bool TCPAssignment::find_estab(struct PidFd pidfd) {
     return flag;
 }
 
+bool TCPAssignment::find_reversed_estab(struct Sock sock) {
+    int flag = false;
+    for (auto iter = reversed_estab_list.begin();iter != reversed_estab_list.end();iter++) {
+        if (iter->first == sock) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
 
 bool TCPAssignment::find_uuid(struct PidFd pidfd) {
     int flag = false;
     for (auto iter = uuid_list.begin();iter != uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_close(struct PidFd pidfd) {
+    int flag = false;
+    for (auto iter = close_list.begin();iter != close_list.end();iter++) {
         if (iter->first == pidfd) {
             flag = true;
             break;
@@ -285,6 +306,21 @@ struct Sock *TCPAssignment::get_estab(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
+struct PidFd *TCPAssignment::get_reversed_estab(struct Sock sock) {
+    struct PidFd *pidfd;
+    int flag = false;
+    for (auto iter = reversed_estab_list.begin();iter != reversed_estab_list.end();iter++) {
+        if (iter->first == sock) {
+            pidfd = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert (flag == true);
+    return pidfd;
+}
+
+// Should be used after checking if find_* returns true
 uint32_t TCPAssignment::get_seq(struct PidFd pidfd) {
     uint32_t s;
     int flag = false;
@@ -304,6 +340,21 @@ UUID TCPAssignment::get_uuid(struct PidFd pidfd) {
     uint32_t syscallUUID;
     int flag = false;
     for (auto iter = uuid_list.begin();iter != uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            syscallUUID = iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return syscallUUID;
+}
+
+// Should be used after checking if find_*returns true
+UUID TCPAssignment::get_close(struct PidFd pidfd) {
+    uint32_t syscallUUID;
+    int flag = false;
+    for (auto iter = close_list.begin();iter != close_list.end();iter++) {
         if (iter->first == pidfd) {
             syscallUUID = iter->second;
             flag = true;
@@ -345,8 +396,8 @@ set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> *TCPAssignment::get_accept
  
 
 // Should be used after checking if find_* returns true
-queue<struct Sock> *TCPAssignment::get_completeq(struct PidFd pidfd) {
-    queue<struct Sock> *lq;
+deque<struct Sock> *TCPAssignment::get_completeq(struct PidFd pidfd) {
+    deque<struct Sock> *lq;
     int flag = false;
     for (auto iter = completeq.begin();iter != completeq.end();iter++) {
         if (iter->first == pidfd) {
@@ -423,6 +474,16 @@ void TCPAssignment::remove_uuid(struct PidFd pidfd) {
     for (auto iter = uuid_list.begin();iter != uuid_list.end();iter++) {
         if (iter->first == pidfd) {
             uuid_list.erase(iter);
+            break;
+         }
+    }
+    return;
+}
+
+void TCPAssignment::remove_close(struct PidFd pidfd) {
+    for (auto iter = close_list.begin();iter != close_list.end();iter++) {
+        if (iter->first == pidfd) {
+            close_list.erase(iter);
             break;
          }
     }
@@ -571,7 +632,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
             remove_cli(pidfd);
             if (find_cli(pidfd)) {
                 struct Sock cli_sock = *get_cli(pidfd);
-            remove_reversed_cli(cli_sock);
+                remove_reversed_cli(cli_sock);
             }
             //struct Sock svr_sock = *get_svr(pidfd);
             remove_svr(pidfd);
@@ -812,7 +873,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 
     int b_log = backlog;
     set<struct Sock> this_listenq;
-    queue<struct Sock> this_completeq;
+    deque<struct Sock> this_completeq;
 
     listenq.insert(make_pair(pidfd, make_pair(b_log, this_listenq)));
     completeq.insert(make_pair(pidfd, this_completeq));
@@ -846,7 +907,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
         }
     } else { // consume one connnection
         struct Sock consumed_sock = cq->front();
-        cq->pop();
+        cq->pop_front();
 
         int new_fd = createFileDescriptor(pid);
         struct PidFd new_pidfd = PidFd(pid, new_fd);
@@ -1202,41 +1263,204 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case ack_flag: {
-/*
-702     else if(tcp_flag==ACK){
-703         this->freePacket(send_p);
-704         swap(src_ip,dest_ip),swap(src_port,dest_port);
-705 //      printf("ACK : %u %u\n",src_port,dest_port);
-706         if(ConnectionManager::get()->check(Connection(src_ip,dest_ip,src_port,dest_port))){ //client, close 3rd  or  server, close final
-707             auto pidfd=ConnectionManager::get()->getPidFd(Connection(src_ip,dest_ip,src_port,dest_port));
-708             int pid=pidfd.first,fd=pidfd.second;
-709
-710             if(pidfd==make_pair(-1,-1)){
-711                 this->freePacket(p);
-712                 return;
-713             }
-714             Connection con=ConnectionManager::get()->getConnection(pid,fd);
-715             if(!con.stat.compare("FIN_WAIT_1")){
-716                 ConnectionManager::get()->updateStat(pid,fd,"FIN_WAIT_2");
-717             }
-718             else if(!con.stat.compare("CLOSING")){
-719                 ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
-720                 timers[timer_n].pid=pid,timers[timer_n].fd=fd;
-721                 this->addTimer(&timers[timer_n],2);
-722             }
-723             else if(!con.stat.compare("LAST_ACK")){
-724                 removeFileDescriptor(pid,fd);
-725                 ConnectionManager::get()->erase(pid,fd);
-726                 if(BindManager::get()->check(pid,fd))BindManager::get()->erase(pid,fd);
-727                 returnSystemCall(CloseQueue::get()->popUUID(pid,fd),0);
-728             }
-729             else{
-730                 this->freePacket(p);
-731                 return;
-732             }
-733         }
-734         else{                           //server, handshake final or simultaneous connect
-*/
+        if (find_reversed_estab(sock)) {
+            //this->freePacket(send);
+            struct PidFd *estab_pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
+            memcpy(estab_pidfd, get_reversed_estab(sock), sizeof(struct PidFd));
+            
+            if (!find_estab(*estab_pidfd)) {
+                this->freePacket(send);
+                this->freePacket(packet);
+                return;
+            }
+
+            struct Sock *estab_sock = get_estab(*estab_pidfd);
+
+            string estab_state = estab_sock->state;
+            if (estab_state.compare("FIN_W1")) {
+                estab_sock->state = "FIN_W2";
+            } else if (estab_state.compare("LAST_ACK")) {
+                if (!find_close(*estab_pidfd)) {
+                    this->freePacket(send);
+                    this->freePacket(packet);
+                    return;
+                }
+           
+                UUID close_uuid = get_close(*estab_pidfd);
+
+                remove_close(*estab_pidfd);
+                remove_sock(*estab_pidfd);
+                remove_bind(*estab_pidfd);
+                remove_cli(*estab_pidfd);
+                if (find_cli(*estab_pidfd)) {
+                    struct Sock cli_sock = *get_cli(*estab_pidfd);
+                    remove_reversed_cli(cli_sock);
+                }
+                remove_svr(*estab_pidfd);
+                remove_estab(*estab_pidfd);
+                if (find_estab(*estab_pidfd)) {
+                    struct Sock est_sock = *get_estab(*estab_pidfd);
+                    remove_reversed_estab(est_sock);
+                }
+                remove_uuid(*estab_pidfd);
+                remove_seq(*estab_pidfd);
+                remove_listenq(*estab_pidfd);
+                remove_completeq(*estab_pidfd);
+                remove_accept_info(*estab_pidfd);
+
+                removeFileDescriptor(estab_pidfd->pid, estab_pidfd->fd);
+                returnSystemCall(close_uuid, 0);
+            } else {
+                this->freePacket(send);
+                this->freePacket(packet);
+                return;
+            }
+        } else {
+            struct PidFd temp_pidfd;
+
+            bool flag = false;
+
+            /* #########################################
+## CHANGE FROM BIND LIST TO LISTEN LIST##
+######################################### */
+
+            // get the pid with src_addr of received packet
+            for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
+                if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
+                            (iter->second.src_addr.sin_addr.s_addr == 0)) &&
+                        (iter->second.src_addr.sin_port == htons(src_port))) {
+                    temp_pidfd = iter->first;
+                    flag = true;
+                    break;
+                }
+            }
+
+            // if corresponding pidfd not found, return immediately
+            if (!flag) {
+                this->freePacket(packet);
+                this->freePacket(send);
+                return;
+            }
+
+            // create new socket and find unestablished socket from svr_list with the pidfd get from upper lines
+            struct Sock *unestab_sock = (struct Sock *)malloc(sizeof(struct Sock));
+
+            flag = false;
+            for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
+                if (iter->first == temp_pidfd) {
+                    auto *set_ptr = &iter->second;
+
+                    /* ############################################################
+## CHANGE find built-in to new defined iterating function ##
+############################################################ */
+
+                    auto iter = set_ptr->find(sock);
+                    struct Sock *tmp_sock_ptr = (struct Sock *)&(*set_ptr->find(sock));
+                    memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
+                    set_ptr->erase(iter);
+                    flag = true;
+                    break;
+                }
+            }
+
+            // if not found, return immediately
+            if (!flag) {
+                this->freePacket(packet);
+                this->freePacket(send);
+                return;
+            }
+
+            this->freePacket(send);
+
+
+            if (find_cli(temp_pidfd)) { // simultaneous case
+                if (*unestab_sock == *get_cli(temp_pidfd)) {
+                    struct Sock *cli_sock = (struct Sock *)malloc(sizeof(struct Sock));
+                    memcpy(cli_sock, get_cli(temp_pidfd), sizeof(struct Sock));
+                    UUID uuid = get_uuid(temp_pidfd);
+                    remove_cli(temp_pidfd);
+                    cli_sock->state = "ESTAB";
+                    estab_list.insert(make_pair(temp_pidfd, *cli_sock));
+                    get_sock(temp_pidfd)->state = "ESTAB";
+                    returnSystemCall(uuid, 0);
+                    this->freePacket(packet);
+                    return;
+                }
+            } else { // not simultaneous case (server received ack from client)
+                // check the validity of ack number
+                if (unestab_sock->seq + 1 != ack_num) {
+                    this->freePacket(packet);
+                    return;
+                }
+
+                if (find_accept_info(temp_pidfd)) { // if accept is already called so that accept_info_list with temp_pidfd is initialized.
+                    auto *accept_info = get_accept_info(temp_pidfd);
+                    if (!accept_info->empty()) { // some blocked accept call
+                        UUID uuid = accept_info->begin()->first;
+                        struct sockaddr_in *addr_in = (struct sockaddr_in *)accept_info->begin()->second.first;
+                        memcpy(addr_in, &unestab_sock->dst_addr, sizeof(struct sockaddr_in));
+                        //socklen_t *len_t = accept_info->begin()->second.second;
+                        //*len_t = (socklen_t)sizeof(sockaddr_in);
+
+                        accept_info->erase(accept_info->begin());
+
+                        int new_fd = createFileDescriptor(temp_pidfd.pid);
+                        struct PidFd new_pidfd = PidFd(temp_pidfd.pid, new_fd);
+
+                        unestab_sock->state = "ESTAB";
+                        estab_list.insert(make_pair(new_pidfd, *unestab_sock));
+
+                        struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
+                        memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
+                        sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
+
+                        auto *lq = &get_listenq(temp_pidfd)->second;
+                        for (auto iter = lq->begin();iter != lq->end();iter++) {
+                            if (*iter == *unestab_sock) {
+                                lq->erase(iter);
+                                break;
+                            }
+                        }
+
+                        returnSystemCall(uuid, new_fd);
+                    } else { // no blocked accept call
+                        unestab_sock->state = "ESTAB";
+
+                        auto *lq = &get_listenq(temp_pidfd)->second;
+                        auto *cq = get_completeq(temp_pidfd);
+
+                        for (auto iter = lq->begin();iter != lq->end();iter++) {
+                            if (*iter == *unestab_sock) {
+                                lq->erase(iter);
+                                break;
+                            }
+                        }
+
+                        cq->push_back(*unestab_sock);
+                    }
+                } else { // if accept is not called yet, accept_info_list with temp_pidfd should be initialized with empty set first
+                    set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
+                    accept_info_list.insert(make_pair(temp_pidfd, new_set));
+
+                    unestab_sock->state = "ESTAB";
+
+                    auto *lq = &get_listenq(temp_pidfd)->second;
+                    auto *cq = get_completeq(temp_pidfd);
+
+                    for (auto iter = lq->begin();iter != lq->end();iter++) {
+                        if (*iter == *unestab_sock) {
+                            lq->erase(iter);
+                            break;
+                        }
+                    }
+
+                    cq->push_back(*unestab_sock);
+                }
+            }
+        }       
+        break;
+        }
+    case fin_flag: {
         struct PidFd temp_pidfd;
 
         bool flag = false;
@@ -1263,205 +1487,114 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             return;
         }
 
-        // create new socket and find unestablished socket from svr_list with the pidfd get from upper lines
-        struct Sock *unestab_sock = (struct Sock *)malloc(sizeof(struct Sock));
-
         flag = false;
-        for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
-            if (iter->first == temp_pidfd) {
-                auto *set_ptr = &iter->second;
 
-                /* ############################################################
-                   ## CHANGE find built-in to new defined iterating function ##
-                   ############################################################ */
+        if (find_completeq(temp_pidfd)) {        
+            // first search through completeq  
+            auto *cq = get_completeq(temp_pidfd);
 
-                auto iter = set_ptr->find(sock);
-                struct Sock *tmp_sock_ptr = (struct Sock *)&(*set_ptr->find(sock));
-                memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
-                set_ptr->erase(iter);
-                flag = true;
-                break;
-            }
-        }
-
-        // if not found, return immediately
-        if (!flag) {
-            this->freePacket(packet);
-            this->freePacket(send);
-            return;
-        }
-
-        this->freePacket(send);
-
-
-        if (find_cli(temp_pidfd)) { // simultaneous case
-            if (*unestab_sock == *get_cli(temp_pidfd)) {
-                struct Sock *cli_sock = (struct Sock *)malloc(sizeof(struct Sock));
-                memcpy(cli_sock, get_cli(temp_pidfd), sizeof(struct Sock));
-                UUID uuid = get_uuid(temp_pidfd);
-                remove_cli(temp_pidfd);
-                cli_sock->state = "ESTAB";
-                estab_list.insert(make_pair(temp_pidfd, *cli_sock));
-                get_sock(temp_pidfd)->state = "ESTAB";
-                returnSystemCall(uuid, 0);
-                this->freePacket(packet);
-                return;
-            }
-        } else { // not simultaneous case (server received ack from client)
-            // check the validity of ack number
-            if (unestab_sock->seq + 1 != ack_num) {
-                this->freePacket(packet);
-                return;
-            }
-
-            if (find_accept_info(temp_pidfd)) { // if accept is already called so that accept_info_list with temp_pidfd is initialized.
-                auto *accept_info = get_accept_info(temp_pidfd);
-                if (!accept_info->empty()) { // some blocked accept call
-                    UUID uuid = accept_info->begin()->first;
-                    struct sockaddr_in *addr_in = (struct sockaddr_in *)accept_info->begin()->second.first;
-                    memcpy(addr_in, &unestab_sock->dst_addr, sizeof(struct sockaddr_in));
-                    //socklen_t *len_t = accept_info->begin()->second.second;
-                    //*len_t = (socklen_t)sizeof(sockaddr_in);
-
-                    accept_info->erase(accept_info->begin());
- 
-                    int new_fd = createFileDescriptor(temp_pidfd.pid);
-                    struct PidFd new_pidfd = PidFd(temp_pidfd.pid, new_fd);
-
-                    unestab_sock->state = "ESTAB";
-                    estab_list.insert(make_pair(new_pidfd, *unestab_sock));
-
-                    struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
-                    memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
-                    sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
-
-                    auto *lq = &get_listenq(temp_pidfd)->second;
-                    for (auto iter = lq->begin();iter != lq->end();iter++) {
-                        if (*iter == *unestab_sock) {
-                            lq->erase(iter);
-                            break;
-                        }
-                    }
-
-                    returnSystemCall(uuid, new_fd);
-                } else { // no blocked accept call
-                    unestab_sock->state = "ESTAB";
-
-                    auto *lq = &get_listenq(temp_pidfd)->second;
-                    auto *cq = get_completeq(temp_pidfd);
-
-                    for (auto iter = lq->begin();iter != lq->end();iter++) {
-                        if (*iter == *unestab_sock) {
-                            lq->erase(iter);
-                            break;
-                        }
-                    }
-
-                    cq->push(*unestab_sock);
-                }
-            } else { // if accept is not called yet, accept_info_list with temp_pidfd should be initialized with empty set first
-                set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
-                accept_info_list.insert(make_pair(temp_pidfd, new_set));
-
-                unestab_sock->state = "ESTAB";
- 
-                auto *lq = &get_listenq(temp_pidfd)->second;
-                auto *cq = get_completeq(temp_pidfd);
-
-                for (auto iter = lq->begin();iter != lq->end();iter++) {
-                    if (*iter == *unestab_sock) {
-                        lq->erase(iter);
+            if (!cq->empty()) {
+                for (auto iter = cq->begin();iter != cq->end();iter++) {
+                    if (*iter == sock) {
+                        iter->state = "CLOSE_W";
+                        flag = true;
                         break;
                     }
                 }
-
-                cq->push(*unestab_sock);
             }
-        }       
-        break;
         }
-    case fin_flag: {
-/*
-781     else if(tcp_flag==FIN){
-782         swap(src_ip,dest_ip),swap(src_port,dest_port);
-783         int exception_flag=0;
-784         if(BindManager::get()->check(src_ip,src_port)){
-785             auto pidfd=BindManager::get()->getPidFd(src_ip,src_port);
-786             if(ListenQueue::get()->connect_queue.find(pidfd)!=ListenQueue::get()->connect_queue.end()){
-787                 for(auto &S:ListenQueue::get()->connect_queue[pidfd]){
-788                     if(S==Connection(src_ip,dest_ip,src_port,dest_port)){
-789                         updateConnectionStat(S,"CLOSE_WAIT");
-790                         exception_flag=1;
-791                     }
-792                 }
-793             }
-794         }
-795         if(exception_flag){
-796             acknum=seq+1;
-797             seq=0;
-798             src_ip=htonl(src_ip),send_p->writeData(14+12,&src_ip,4);
-799             dest_ip=htonl(dest_ip),send_p->writeData(14+16,&dest_ip,4);
-800             src_port=htons(src_port),send_p->writeData(34+0,&src_port,2);
-801             dest_port=htons(dest_port),send_p->writeData(34+2,&dest_port,2);
-802             seq=htonl(seq),send_p->writeData(34+4,&seq,4);
-803             acknum=htonl(acknum),send_p->writeData(34+8,&acknum,4);
-804             setTCPFlag(send_p,ACK);
-805             window_size=htons(window_size),send_p->writeData(34+14,&window_size,2);
-806             send_p->writeData(34+16,&z16,2);
-807             uint8_t tcp_data[20];
-808             send_p->readData(34,tcp_data,20);
-809             uint16_t csum=~NetworkUtil::tcp_sum(src_ip,dest_ip,tcp_data,20);
-810             csum=htons(csum);
-811             send_p->writeData(34+16,&csum,2);
-812
-813             this->sendPacket("IPv4",send_p);
-814             this->freePacket(p);
-815             return;
-816         }
-817         auto pidfd=ConnectionManager::get()->getPidFd(Connection(src_ip,dest_ip,src_port,dest_port));
-818         int pid=pidfd.first,fd=pidfd.second;
-819         if(pidfd==make_pair(-1,-1)){
-820             this->freePacket(p);
-821             this->freePacket(send_p);
-822             return;
-823         }
-824         Connection con=ConnectionManager::get()->getConnection(pid,fd);
-825         acknum=seq+1;
-826         seq=0;
-827         src_ip=htonl(src_ip),send_p->writeData(14+12,&src_ip,4);
-828         dest_ip=htonl(dest_ip),send_p->writeData(14+16,&dest_ip,4);
-829         src_port=htons(src_port),send_p->writeData(34+0,&src_port,2);
-830         dest_port=htons(dest_port),send_p->writeData(34+2,&dest_port,2);
-831         seq=htonl(seq),send_p->writeData(34+4,&seq,4);
-832         acknum=htonl(acknum),send_p->writeData(34+8,&acknum,4);
-833         setTCPFlag(send_p,ACK);
-834         window_size=htons(window_size),send_p->writeData(34+14,&window_size,2);
-835         send_p->writeData(34+16,&z16,2);
-836         uint8_t tcp_data[20];
-837         send_p->readData(34,tcp_data,20);
-838         uint16_t csum=~NetworkUtil::tcp_sum(src_ip,dest_ip,tcp_data,20);
-839         csum=htons(csum);
-840         send_p->writeData(34+16,&csum,2);
-841
-842         if(!con.stat.compare("FIN_WAIT_1")){
-843             ConnectionManager::get()->updateStat(pid,fd,"CLOSING");
-844         }
-845         else if(!con.stat.compare("FIN_WAIT_2")){
-846             ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
-847             timers[timer_n].pid=pid,timers[timer_n].fd=fd;
-848             this->addTimer(&timers[timer_n],2);
-849         }
-850         else if(!con.stat.compare("ESTABLISHED")){
-851             ConnectionManager::get()->updateStat(pid,fd,"CLOSE_WAIT");
-852         }
-853         else{
-854             this->freePacket(p);
-855             this->freePacket(send_p);
-856             return;
-857         }
-858         this->sendPacket("IPv4",send_p);
-859     }
-*/
+                    
+        if (flag) { // if sock in completeq matches
+            ack_num = seq_num + 1;
+            seq_num = 0;
+ 
+            // change order to network order
+            src_ip = htonl(src_ip);
+            dst_ip = htonl(dst_ip);
+            src_port = htons(src_port);
+            dst_port = htons(dst_port);
+            seq_num = htonl(seq_num);
+            ack_num = htonl(ack_num);
+
+            // write data to packet
+            send->writeData(14 + 12, &src_ip, 4);
+            send->writeData(14 + 16, &dst_ip, 4);
+            send->writeData(14 + 20 + 0, &src_port, 2);
+            send->writeData(14 + 20 + 2, &dst_port, 2);
+            send->writeData(14 + 20 + 4, &seq_num, 4);
+            send->writeData(14 + 20 + 8, &ack_num, 4);
+            send->writeData(14 + 20 + 12, &offset, 1); 
+            uint8_t ack = ack_flag;
+            send->writeData(14 + 20 + 13, &ack, 1);
+            send->writeData(14 + 20 + 14, &window, 2);
+
+            // calculate checksum
+            uint16_t zero_2b = 0;
+            send->writeData(14 + 20 + 16, &zero_2b, 2);
+            uint8_t *tcp_header = (uint8_t *)malloc(20);
+            send->readData(14 + 20, tcp_header, 20);
+            uint16_t checksum = htons(~NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20));
+            send->writeData(14 + 20 + 16, &checksum, 2);
+            this->freePacket(packet);
+            this->sendPacket("IPv4", send);
+            return;
+        } else {
+            if (!find_estab(temp_pidfd)) {
+                this->freePacket(packet);
+                this->freePacket(send);
+                return;
+            }
+            struct Sock *svr_sock = get_estab(temp_pidfd);
+            ack_num = seq_num + 1;
+            seq_num = 0;
+ 
+            // change order to network order
+            src_ip = htonl(src_ip);
+            dst_ip = htonl(dst_ip);
+            src_port = htons(src_port);
+            dst_port = htons(dst_port);
+            seq_num = htonl(seq_num);
+            ack_num = htonl(ack_num);
+
+            // write data to packet
+            send->writeData(14 + 12, &src_ip, 4);
+            send->writeData(14 + 16, &dst_ip, 4);
+            send->writeData(14 + 20 + 0, &src_port, 2);
+            send->writeData(14 + 20 + 2, &dst_port, 2);
+            send->writeData(14 + 20 + 4, &seq_num, 4);
+            send->writeData(14 + 20 + 8, &ack_num, 4);
+            send->writeData(14 + 20 + 12, &offset, 1); 
+            uint8_t ack = ack_flag;
+            send->writeData(14 + 20 + 13, &ack, 1);
+            send->writeData(14 + 20 + 14, &window, 2);
+
+            // calculate checksum
+            uint16_t zero_2b = 0;
+            send->writeData(14 + 20 + 16, &zero_2b, 2);
+            uint8_t *tcp_header = (uint8_t *)malloc(20);
+            send->readData(14 + 20, tcp_header, 20);
+            uint16_t checksum = htons(~NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20));
+            send->writeData(14 + 20 + 16, &checksum, 2);
+
+            string tmp_state = svr_sock->state;
+
+            if (tmp_state.compare("FIN_W2") == 0) {
+                svr_sock->state = "TIME_W";
+                /*
+                ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
+                timers[timer_n].pid=pid,timers[timer_n].fd=fd;
+                this->addTimer(&timers[timer_n],2);
+                */               
+                this->sendPacket("IPv4", send);
+            } else if (tmp_state.compare("ESTAB") == 0) {
+                svr_sock->state = "CLOSE_W";
+                this->sendPacket("IPv4", send);
+            } else {
+                this->freePacket(packet);
+                this->freePacket(send);
+                return;
+            }
+        }
         break;
         }
     default: {
