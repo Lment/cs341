@@ -1540,6 +1540,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             return;
         } else {
             if (!find_estab(temp_pidfd)) {
+                printf("where0\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
@@ -1580,11 +1581,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
             if (tmp_state.compare("FIN_W2") == 0) {
                 svr_sock->state = "TIME_W";
-                /*
-                ConnectionManager::get()->updateStat(pid,fd,"TIME_WAIT");
-                timers[timer_n].pid=pid,timers[timer_n].fd=fd;
-                this->addTimer(&timers[timer_n],2);
-                */               
+                struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
+                memcpy(tmp_ptr, &temp_pidfd, sizeof(struct PidFd));
+                timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
+                this->addTimer(tmp_ptr, 3);
                 this->sendPacket("IPv4", send);
             } else if (tmp_state.compare("ESTAB") == 0) {
                 svr_sock->state = "CLOSE_W";
@@ -1607,8 +1607,37 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
 void TCPAssignment::timerCallback(void* payload)
 {
+    struct PidFd *pidfd = (struct PidFd *)payload;
 
+    removeFileDescriptor(pidfd->pid, pidfd->fd);
+
+    if (!find_close(*pidfd)) {
+        return;
+    }
+
+    UUID close_uuid = get_close(*pidfd);
+
+    remove_close(*pidfd);
+    remove_sock(*pidfd);
+    remove_bind(*pidfd);
+    remove_cli(*pidfd);
+    if (find_cli(*pidfd)) {
+        struct Sock cli_sock = *get_cli(*pidfd);
+        remove_reversed_cli(cli_sock);
+    }
+    remove_svr(*pidfd);
+    remove_estab(*pidfd);
+    if (find_estab(*pidfd)) {
+        struct Sock est_sock = *get_estab(*pidfd);
+        remove_reversed_estab(est_sock);
+    }
+    remove_uuid(*pidfd);
+    remove_seq(*pidfd);
+    remove_listenq(*pidfd);
+    remove_completeq(*pidfd);
+    remove_accept_info(*pidfd);
+
+    returnSystemCall(close_uuid, 0);
 }
-
 
 }

@@ -119,6 +119,8 @@ protected:
     map<struct PidFd, set<pair<UUID, pair<struct sockaddr *, socklen_t *>>>> accept_info_list; // map server pidfd and set of (UUID, (*, *)) for accept function call
     // all closed sockets
     map<struct PidFd, UUID> close_list; // all closed sockets(connections)
+    // timer list
+    map<struct PidFd, struct PidFd *> timer_list;
 
     int used_port[65536 - 1024] = {0};
     static const uint8_t fin_flag = 0b00000001;
