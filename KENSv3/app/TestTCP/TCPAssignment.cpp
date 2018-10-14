@@ -554,6 +554,7 @@ void TCPAssignment::remove_accept_info(struct PidFd pidfd) {
 */
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int protocol) {
+    printf("CALL SOCKET\n");
     int new_fd = createFileDescriptor(pid);
 
     struct PidFd pidfd = PidFd(pid, new_fd);
@@ -566,7 +567,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-    //printf("CLOSED CALLED\n");
+    printf("CALL CLOSE\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -622,6 +623,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 
         close_list.insert(make_pair(pidfd, syscallUUID));
         this->sendPacket("IPv4", packet);
+        printf("SEND FIN\n");
         return;
     } else {
             if (find_listenq(pidfd)) {
@@ -657,6 +659,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
 }
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+    printf("CALL BIND\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -686,6 +689,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, struct socka
 }
 
 void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t*addrlen) {
+    printf("CALL GETSOCKNAME\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     int in_bind = false;
@@ -748,6 +752,7 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int fd, struc
 
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t addrlen) {
+    printf("CALL CONNECT\n");
 
     // make pidfd and sockaddr_in structure
     struct PidFd pidfd = PidFd(pid, fd);
@@ -833,6 +838,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     uuid_list.insert(make_pair(pidfd, syscallUUID));
 
     this->sendPacket("IPv4", packet);
+    printf("SEND SYN\n");
     return;
 }
 
@@ -850,6 +856,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
 */
 
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlog) {
+    printf("CALL LISTEN\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -885,7 +892,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
-    //printf("Accept called\n");
+    printf("CALL ACCEPT\n");
     struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
@@ -944,6 +951,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
 }
 
 void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
+    printf("CALL GETPEERNAME\n");
    /*
     Returns 0 on success, -1 on error
     Example from test case code:
@@ -1059,7 +1067,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
     switch (flag) {
     case synack_flag: {
-        //printf("SYNACK\n");
+        printf("GET SYNACK\n");
         // if corresponding pidfd does not exist, return
         if (!find_reversed_cli(sock)) {
             this->freePacket(packet);
@@ -1152,11 +1160,12 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         UUID syscallUUID = get_uuid(*pidfd);
         returnSystemCall(syscallUUID, 0);
         this->sendPacket("IPv4", send);
+        printf("SEND ACK\n");
         break;
         }
 
     case syn_flag: {
-        //printf("SYN\n");
+        printf("GET SYN\n");
         // server get syn from client connect
         
         struct Sock temp_sock;
@@ -1268,10 +1277,15 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         send->writeData(14 + 20 + 16, &checksum, 2);
 
         this->sendPacket("IPv4", send);
+        if (simul_case) {
+            printf("SEND ACK\n");
+        } else {
+            printf("SEND SYNACK\n");
+        }
         break;
         }
     case ack_flag: {
-        //printf("ACK\n");
+        printf("GET ACK\n");
         if (find_reversed_estab(sock)) {
             //this->freePacket(send);
             struct PidFd *estab_pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
@@ -1494,7 +1508,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case fin_flag: {
-        //printf("FIN\n");
+        printf("GET FIN\n");
         struct PidFd temp_pidfd;
 
         bool flag = false;
@@ -1613,6 +1627,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             send->writeData(14 + 20 + 16, &checksum, 2);
             this->freePacket(packet);
             this->sendPacket("IPv4", send);
+            printf("SEND ACK\n");
             return;
         } else {
             //printf("FIN8\n");
@@ -1666,14 +1681,17 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
                 this->addTimer(tmp_ptr, 3);
                 this->sendPacket("IPv4", send);
+                printf("SEND ACK\n");
             } else if (tmp_state.compare("ESTAB") == 0) {
                 //printf("FIN B done\n");
                 svr_sock->state = "CLOSE_W";
                 this->sendPacket("IPv4", send);
+                printf("SEND ACK\n");
             } else if (tmp_state.compare("FIN_W1") == 0) {
                 //printf("FIN C done\n");
                 svr_sock->state = "SIMUL_C";
                 this->sendPacket("IPv4", send);
+                printf("SEND ACK\n");
             } else {
                 //printf("FIN D done\n");
                 this->freePacket(packet);
