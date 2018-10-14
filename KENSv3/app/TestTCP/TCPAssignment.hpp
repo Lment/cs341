@@ -108,11 +108,11 @@ protected:
     map<struct PidFd, struct Sock> bind_list; // bound socket list
     map<struct PidFd, struct Sock> cli_list; // client unestablished connection having sent SYN
     map<struct Sock, struct PidFd> reversed_cli_list; // reversed cli_list
-    map<struct PidFd, set<struct Sock>> svr_list; // server unestablished connection having received SYN sent SYNACK
+    map<struct PidFd, deque<struct Sock>> svr_list; // server unestablished connection having received SYN sent SYNACK
     //map<struct Sock, struct PidFd> reversed_svr_list; // reversed svr_list
     map<struct PidFd, struct Sock> estab_list; // established connection, if server, having received ACK, if client, having received SYNACK and sent ACK
     map<struct Sock, struct PidFd> reversed_estab_list; // reversed estab_list
-    map<struct PidFd, pair<int, set<struct Sock>>> listenq; // map server pidfd and pair of (backlog and set of unestablished socket)
+    map<struct PidFd, pair<int, deque<struct Sock>>> listenq; // map server pidfd and pair of (backlog and set of unestablished socket)
     map<struct PidFd, deque<struct Sock>> completeq; // map server pidfd and set of established socket
     map<struct PidFd, UUID> uuid_list; // map client pidfd and uuid for connect function call
     map<struct PidFd, uint32_t> seq_list; // map pidfd and seq number sent by packet
@@ -150,10 +150,10 @@ protected:
     virtual struct Sock *get_bind(struct PidFd pidfd);
     virtual struct Sock *get_cli(struct PidFd pidfd);
     virtual struct PidFd *get_reversed_cli(struct Sock sock);
-    virtual set<struct Sock> *get_svr(struct PidFd pifd);
+    virtual deque<struct Sock> *get_svr(struct PidFd pifd);
     virtual struct Sock *get_estab(struct PidFd pidfd);
     virtual struct PidFd *get_reversed_estab(struct Sock sock);
-    virtual pair<int, set<struct Sock>> *get_listenq(struct PidFd pidfd);
+    virtual pair<int, deque<struct Sock>> *get_listenq(struct PidFd pidfd);
     virtual deque<struct Sock> *get_completeq(struct PidFd pidfd);
     virtual uint32_t get_seq(struct PidFd pidfd);
     virtual UUID get_uuid(struct PidFd pidfd);

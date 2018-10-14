@@ -276,8 +276,8 @@ struct PidFd *TCPAssignment::get_reversed_cli(struct Sock sock) {
 }
 
 // Should be used after checking if find_* returns true
-set<struct Sock> *TCPAssignment::get_svr(struct PidFd pidfd) {
-    set<struct Sock> *sock_set;
+deque<struct Sock> *TCPAssignment::get_svr(struct PidFd pidfd) {
+    deque<struct Sock> *sock_set;
     int flag = false;
     for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
         if (iter->first == pidfd) {
@@ -366,8 +366,8 @@ UUID TCPAssignment::get_close(struct PidFd pidfd) {
 }
 
 // Should be used after checking if find_* returns true
-pair<int, set<struct Sock>> *TCPAssignment::get_listenq(struct PidFd pidfd) {
-    pair<int, set<struct Sock>> *lq;
+pair<int, deque<struct Sock>> *TCPAssignment::get_listenq(struct PidFd pidfd) {
+    pair<int, deque<struct Sock>> *lq;
     int flag = false;
     for (auto iter = listenq.begin();iter != listenq.end();iter++) {
         if (iter->first == pidfd) {
@@ -566,6 +566,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
+    //printf("CLOSED CALLED\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -872,7 +873,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
     sock2->state = "LISTEN";
 
     int b_log = backlog;
-    set<struct Sock> this_listenq;
+    deque<struct Sock> this_listenq;
     deque<struct Sock> this_completeq;
 
     listenq.insert(make_pair(pidfd, make_pair(b_log, this_listenq)));
@@ -883,6 +884,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int backlo
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen) {
+    //printf("Accept called\n");
     struct PidFd pidfd = PidFd(pid, fd);
     struct sockaddr_in *addr_in = (sockaddr_in *)addr;
 
@@ -920,6 +922,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
         
         sock_list.insert(make_pair(new_pidfd, new_sock));
         estab_list.insert(make_pair(new_pidfd, new_sock));
+        reversed_estab_list.insert(make_pair(new_sock, new_pidfd));
 
         memcpy(addr_in, &consumed_sock.dst_addr, sizeof(struct sockaddr_in));
         //*addrlen = sizeof(sockaddr_in);
@@ -1056,6 +1059,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
     switch (flag) {
     case synack_flag: {
+        //printf("SYNACK\n");
         // if corresponding pidfd does not exist, return
         if (!find_reversed_cli(sock)) {
             this->freePacket(packet);
@@ -1135,6 +1139,8 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         */
         struct Sock *the_sock = get_sock(*pidfd);
         the_sock->state = "ESTAB";
+        the_sock->src_addr = src_addr;
+        the_sock->dst_addr = dst_addr;
         remove_cli(*pidfd);
         remove_reversed_cli(*the_sock);
         struct Sock *new_sock = (struct Sock *)malloc(sizeof(struct Sock));
@@ -1149,6 +1155,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
 
     case syn_flag: {
+        //printf("SYN\n");
         // server get syn from client connect
         
         struct Sock temp_sock;
@@ -1209,7 +1216,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->freePacket(send);
                 return;
             } else {
-                lq->second.insert(sock);
+                lq->second.push_back(sock);
             }
 
             // construct packet to send
@@ -1220,16 +1227,16 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             send->writeData(14 + 20 + 13, &synack, 1);
  
             if (!find_svr(temp_pidfd)) {
-                set<struct Sock> new_set;
+                deque<struct Sock> new_set;
                 sock.seq = seq_num;
                 sock.state = "SYN_RCVD";
-                new_set.insert(sock);
+                new_set.push_back(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
             } else {
-                set<struct Sock> *the_set = get_svr(temp_pidfd);
+                deque<struct Sock> *the_set = get_svr(temp_pidfd);
                 sock.seq = seq_num;
                 sock.state = "SYN_RCVD";
-                the_set->insert(sock);
+                the_set->push_back(sock);
             }
         }
 
@@ -1263,6 +1270,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case ack_flag: {
+        //printf("ACK\n");
         if (find_reversed_estab(sock)) {
             //this->freePacket(send);
             struct PidFd *estab_pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
@@ -1277,9 +1285,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             struct Sock *estab_sock = get_estab(*estab_pidfd);
 
             string estab_state = estab_sock->state;
-            if (estab_state.compare("FIN_W1")) {
+            if (estab_state.compare("FIN_W1") == 0) {
                 estab_sock->state = "FIN_W2";
-            } else if (estab_state.compare("LAST_ACK")) {
+            } else if (estab_state.compare("LAST_ACK") == 0) {
                 if (!find_close(*estab_pidfd)) {
                     this->freePacket(send);
                     this->freePacket(packet);
@@ -1310,25 +1318,32 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                 removeFileDescriptor(estab_pidfd->pid, estab_pidfd->fd);
                 returnSystemCall(close_uuid, 0);
+            } else if (estab_state.compare("SIMUL_C") == 0) {
+                struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
+                memcpy(tmp_ptr, &estab_pidfd, sizeof(struct PidFd));
+                timer_list.insert(make_pair(*estab_pidfd, tmp_ptr));
+                this->addTimer(tmp_ptr, 3);
+                estab_sock->state = "TIME_W";
             } else {
                 this->freePacket(send);
                 this->freePacket(packet);
                 return;
             }
         } else {
+            //printf("ACK2\n");
             struct PidFd temp_pidfd;
 
             bool flag = false;
 
             /* #########################################
-## CHANGE FROM BIND LIST TO LISTEN LIST##
-######################################### */
+               ## CHANGE FROM BIND LIST TO LISTEN LIST##
+               ######################################### */
 
             // get the pid with src_addr of received packet
             for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
                 if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
-                            (iter->second.src_addr.sin_addr.s_addr == 0)) &&
-                        (iter->second.src_addr.sin_port == htons(src_port))) {
+                     (iter->second.src_addr.sin_addr.s_addr == 0)) &&
+                    (iter->second.src_addr.sin_port == htons(src_port))) {
                     temp_pidfd = iter->first;
                     flag = true;
                     break;
@@ -1341,37 +1356,45 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->freePacket(send);
                 return;
             }
-
+            //printf("ACK3\n");
             // create new socket and find unestablished socket from svr_list with the pidfd get from upper lines
             struct Sock *unestab_sock = (struct Sock *)malloc(sizeof(struct Sock));
 
             flag = false;
             for (auto iter = svr_list.begin();iter != svr_list.end();iter++) {
                 if (iter->first == temp_pidfd) {
+                    //printf("ACK3-loop\n");
                     auto *set_ptr = &iter->second;
 
                     /* ############################################################
-## CHANGE find built-in to new defined iterating function ##
-############################################################ */
-
-                    auto iter = set_ptr->find(sock);
-                    struct Sock *tmp_sock_ptr = (struct Sock *)&(*set_ptr->find(sock));
-                    memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
-                    set_ptr->erase(iter);
-                    flag = true;
-                    break;
+                       ## CHANGE find built-in to new defined iterating function ##
+                       ############################################################ */
+                    for (auto iter2 = set_ptr->begin();iter2 != set_ptr->end();iter2++) {
+                        if (*iter2 == sock) {
+                            struct Sock *tmp_sock_ptr = (struct Sock *)&(*iter2);
+                            memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
+                            //printf("ACK3-loop erase\n");
+                            set_ptr->erase(iter2);
+                            //printf("ACK3-loop erase done\n");
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if (flag) {
+                        break;
+                    }
                 }
             }
 
             // if not found, return immediately
             if (!flag) {
+                //printf("ACK3-p\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
             }
-
+            //printf("ACK4\n");
             this->freePacket(send);
-
 
             if (find_cli(temp_pidfd)) { // simultaneous case
                 if (*unestab_sock == *get_cli(temp_pidfd)) {
@@ -1387,6 +1410,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     return;
                 }
             } else { // not simultaneous case (server received ack from client)
+                //printf("ACK5\n");
                 // check the validity of ack number
                 if (unestab_sock->seq + 1 != ack_num) {
                     this->freePacket(packet);
@@ -1394,8 +1418,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 }
 
                 if (find_accept_info(temp_pidfd)) { // if accept is already called so that accept_info_list with temp_pidfd is initialized.
+                    //printf("ACK6\n");
                     auto *accept_info = get_accept_info(temp_pidfd);
                     if (!accept_info->empty()) { // some blocked accept call
+                        //printf("ACK6-1\n");
                         UUID uuid = accept_info->begin()->first;
                         struct sockaddr_in *addr_in = (struct sockaddr_in *)accept_info->begin()->second.first;
                         memcpy(addr_in, &unestab_sock->dst_addr, sizeof(struct sockaddr_in));
@@ -1413,6 +1439,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
                         memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
                         sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
+                        
 
                         auto *lq = &get_listenq(temp_pidfd)->second;
                         for (auto iter = lq->begin();iter != lq->end();iter++) {
@@ -1424,6 +1451,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                         returnSystemCall(uuid, new_fd);
                     } else { // no blocked accept call
+                        //printf("ACK6-2\n");
                         unestab_sock->state = "ESTAB";
 
                         auto *lq = &get_listenq(temp_pidfd)->second;
@@ -1439,6 +1467,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         cq->push_back(*unestab_sock);
                     }
                 } else { // if accept is not called yet, accept_info_list with temp_pidfd should be initialized with empty set first
+                    //printf("ACK7\n");
                     set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> new_set;
                     accept_info_list.insert(make_pair(temp_pidfd, new_set));
 
@@ -1449,6 +1478,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                     for (auto iter = lq->begin();iter != lq->end();iter++) {
                         if (*iter == *unestab_sock) {
+                            //printf("ACK8\n");
                             lq->erase(iter);
                             break;
                         }
@@ -1461,40 +1491,80 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         break;
         }
     case fin_flag: {
+        //printf("FIN\n");
         struct PidFd temp_pidfd;
 
         bool flag = false;
+        /*
+        //printf("%d %d %d %d of sock\n", sock.src_addr.sin_addr.s_addr, sock.src_addr.sin_port, sock.dst_addr.sin_addr.s_addr, sock.dst_addr.sin_port);
     
-        /* #########################################
-           ## CHANGE FROM BIND LIST TO LISTEN LIST##
-           ######################################### */
-
-        // get the pid with src_addr of received packet
         for (auto iter = bind_list.begin();iter != bind_list.end();iter++) {
-            if (((iter->second.src_addr.sin_addr.s_addr == htonl(src_ip)) ||
-                (iter->second.src_addr.sin_addr.s_addr == 0)) &&
-                (iter->second.src_addr.sin_port == htons(src_port))) {
-                    temp_pidfd = iter->first;
-                    flag = true;
-                    break;
+            //printf("%d %d %d %d of bindlist ", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, iter->second.dst_addr.sin_addr.s_addr, iter->second.dst_addr.sin_port);
+            cout << iter->second.state;
+            cout << "\n";
+        }           
+ 
+        for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
+            //printf("%d %d %d %d of socklist ", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, iter->second.dst_addr.sin_addr.s_addr, iter->second.dst_addr.sin_port);
+            cout << iter->second.state;
+            cout << "\n";
+        }
+        */
+        //printf("FIN2\n");
+        // get the pid with src_addr of received packet
+        for (auto iter = estab_list.begin();iter != estab_list.end();iter++) {
+            //printf("%d %d %d %d of estab\n", iter->second.src_addr.sin_addr.s_addr, iter->second.src_addr.sin_port, iter->second.dst_addr.sin_addr.s_addr, iter->second.dst_addr.sin_port);
+            if (iter->second == sock) {
+                temp_pidfd = iter->first;
+                flag = true;
+                break;
             }
         }
+        //printf("FIN3\n");
+
+        bool in_cq = false;
+
+        if (!flag) {
+            //printf("FIN4\n");
+            for (auto iter = completeq.begin();iter != completeq.end();iter++) {
+                //printf("FIN4-1\n");
+                auto *cq = &iter->second;
+                bool found = false;
+                //printf("size of cq is %d\n", cq->size());
+                for (auto iter2 = cq->begin();iter2 != cq->end();iter2++) {
+                    if (*iter2 == sock) {
+                        iter2->state = "CLOSE_W";
+                        flag = true;
+                        found = true;
+                        in_cq = true;
+                        temp_pidfd = iter->first;
+                        break;
+                    }
+                }
+                if (found) {
+                    break;
+                }
+            }
+        }
+        //printf("FIN5\n");
 
         // if corresponding pidfd not found, return immediately
         if (!flag) {
+            //printf("FIN6\n");
             this->freePacket(packet);
             this->freePacket(send);
             return;
         }
 
-        flag = false;
-
-        if (find_completeq(temp_pidfd)) {        
-            // first search through completeq  
-            auto *cq = get_completeq(temp_pidfd);
-
-            if (!cq->empty()) {
-                for (auto iter = cq->begin();iter != cq->end();iter++) {
+        /*
+        if (find_listenq(temp_pidfd)) {
+            //printf("lq\n");
+            auto *lq = &get_listenq(temp_pidfd)->second;
+        
+            if (!lq->empty()) {
+                for (auto iter = lq->begin();iter != lq->end();iter++) {
+                    //printf("%d %d %d %d in sock\n", sock.src_addr.sin_addr.s_addr, sock.src_addr.sin_port, sock.dst_addr.sin_addr.s_addr, sock.dst_addr.sin_port);
+                    //printf("%d %d %d %d in lq\n", iter->src_addr.sin_addr.s_addr, iter->src_addr.sin_port, iter->dst_addr.sin_addr.s_addr, iter->dst_addr.sin_port);
                     if (*iter == sock) {
                         iter->state = "CLOSE_W";
                         flag = true;
@@ -1502,9 +1572,12 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     }
                 }
             }
+            //printf("empty\n");
         }
-                    
-        if (flag) { // if sock in completeq matches
+        */
+          
+        if (in_cq) { // if sock in completeq matches
+            //printf("FIN7\n");
             ack_num = seq_num + 1;
             seq_num = 0;
  
@@ -1539,8 +1612,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             this->sendPacket("IPv4", send);
             return;
         } else {
+            //printf("FIN8\n");
             if (!find_estab(temp_pidfd)) {
-                printf("where0\n");
+                //printf("where0\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
@@ -1578,8 +1652,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             send->writeData(14 + 20 + 16, &checksum, 2);
 
             string tmp_state = svr_sock->state;
+            //cout << tmp_state;
+            //cout << " ";
 
             if (tmp_state.compare("FIN_W2") == 0) {
+                //printf("FIN A done\n");
                 svr_sock->state = "TIME_W";
                 struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
                 memcpy(tmp_ptr, &temp_pidfd, sizeof(struct PidFd));
@@ -1587,9 +1664,15 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->addTimer(tmp_ptr, 3);
                 this->sendPacket("IPv4", send);
             } else if (tmp_state.compare("ESTAB") == 0) {
+                //printf("FIN B done\n");
                 svr_sock->state = "CLOSE_W";
                 this->sendPacket("IPv4", send);
+            } else if (tmp_state.compare("FIN_W1") == 0) {
+                //printf("FIN C done\n");
+                svr_sock->state = "SIMUL_C";
+                this->sendPacket("IPv4", send);
             } else {
+                //printf("FIN D done\n");
                 this->freePacket(packet);
                 this->freePacket(send);
                 return;
