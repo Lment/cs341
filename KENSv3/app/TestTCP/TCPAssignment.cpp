@@ -577,6 +577,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
     struct Sock *estab_sock;
     if (find_estab(pidfd)) {
         estab_sock = get_estab(pidfd);
+        //printf("address %d %d %d %d\n", estab_sock->src_addr.sin_addr.s_addr, estab_sock->src_addr.sin_port, estab_sock->dst_addr.sin_addr.s_addr, estab_sock->dst_addr.sin_port);
         string s = estab_sock->state;
         if (s.compare("ESTAB") == 0) {
             estab_sock->state = "FIN_W1";
@@ -914,14 +915,13 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, struct soc
         int new_fd = createFileDescriptor(pid);
         struct PidFd new_pidfd = PidFd(pid, new_fd);
 
-        struct Sock *to_get_sock_addr = get_bind(pidfd);
-        struct Sock new_sock = Sock(to_get_sock_addr->src_addr);
-
+        struct Sock new_sock = consumed_sock;
+        //printf("consumed sock is %d %d, new sock is %d %d\n", consumed_sock.src_addr.sin_addr.s_addr, consumed_sock.src_addr.sin_port, new_sock.src_addr.sin_addr.s_addr, new_sock.src_addr.sin_port);
         new_sock.state = "ESTAB";
-        new_sock.dst_addr = consumed_sock.dst_addr;
         
         sock_list.insert(make_pair(new_pidfd, new_sock));
         estab_list.insert(make_pair(new_pidfd, new_sock));
+        //printf("1 %d %d %d %d\n", new_sock.src_addr.sin_addr.s_addr, new_sock.src_addr.sin_port, new_sock.dst_addr.sin_addr.s_addr, new_sock.dst_addr.sin_port);
         reversed_estab_list.insert(make_pair(new_sock, new_pidfd));
 
         memcpy(addr_in, &consumed_sock.dst_addr, sizeof(struct sockaddr_in));
@@ -1146,6 +1146,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         struct Sock *new_sock = (struct Sock *)malloc(sizeof(struct Sock));
         memcpy(new_sock, the_sock, sizeof(struct Sock));
         estab_list.insert(make_pair(*pidfd, *new_sock));
+        //printf("2 %d %d %d %d\n", new_sock->src_addr.sin_addr.s_addr, new_sock->src_addr.sin_port, new_sock->dst_addr.sin_addr.s_addr, new_sock->dst_addr.sin_port);
         reversed_estab_list.insert(make_pair(*new_sock, *pidfd));
  
         UUID syscallUUID = get_uuid(*pidfd);
@@ -1404,6 +1405,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     remove_cli(temp_pidfd);
                     cli_sock->state = "ESTAB";
                     estab_list.insert(make_pair(temp_pidfd, *cli_sock));
+                    //printf("3 %d %d %d %d\n", cli_sock->src_addr.sin_addr.s_addr, cli_sock->src_addr.sin_port, cli_sock->dst_addr.sin_addr.s_addr, cli_sock->dst_addr.sin_port);
                     get_sock(temp_pidfd)->state = "ESTAB";
                     returnSystemCall(uuid, 0);
                     this->freePacket(packet);
@@ -1435,7 +1437,8 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                         unestab_sock->state = "ESTAB";
                         estab_list.insert(make_pair(new_pidfd, *unestab_sock));
-
+                        //printf("4 %d %d %d %d\n", unestab_sock->src_addr.sin_addr.s_addr, unestab_sock->src_addr.sin_port, unestab_sock->dst_addr.sin_addr.s_addr, unestab_sock->dst_addr.sin_port);
+ 
                         struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
                         memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
                         sock_list.insert(make_pair(new_pidfd, *brand_new_sock));
