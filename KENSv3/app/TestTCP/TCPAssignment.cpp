@@ -598,11 +598,14 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         packet->writeData(14 + 20 + 2, &estab_sock->dst_addr.sin_port, 2);
     
         // write sequence number
-        estab_sock->seq = estab_sock->seq + 1;
-        uint32_t seq_num = htonl(estab_sock->seq);
+        uint32_t seq_num = 0;
         if (find_seq(pidfd)) {
-            seq_list[pidfd] = get_seq(pidfd) + 1;
             seq_num = htonl(get_seq(pidfd));
+        } else {
+            if (s.compare("ESTAB") == 0) {
+                estab_sock->seq = estab_sock->seq + 1;
+            }
+            seq_num = htonl(estab_sock->seq);
         }
         packet->writeData(14 + 20 + 4, &seq_num, 4);
 
@@ -1117,7 +1120,8 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         // set ack to seq_num + 1
         ack_num = seq_num + 1;
         if (find_seq(*pidfd)) {
-            seq_num = get_seq(*pidfd) + 1;
+            seq_list[*pidfd] = seq_list[*pidfd] + 1;
+            seq_num = get_seq(*pidfd) ;
         }
         
         // get ack flag
@@ -1520,6 +1524,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     case fin_flag: {
         printf("GET FIN\n");
         struct PidFd temp_pidfd;
+        struct Sock *cq_sock = (struct Sock *)malloc(sizeof(struct Sock));
 
         bool flag = false;
         /*
@@ -1564,6 +1569,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         flag = true;
                         found = true;
                         in_cq = true;
+                        memcpy(cq_sock, (struct Sock *)&iter2, sizeof(struct Sock));
                         temp_pidfd = iter->first;
                         break;
                     }
@@ -1606,7 +1612,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         if (in_cq) { // if sock in completeq matches
             //printf("FIN7\n");
             ack_num = seq_num + 1;
-            seq_num = 0;
+            cq_sock->seq = cq_sock->seq + 1;
+            seq_num = cq_sock->seq;
+            printf("2\n");
  
             // change order to network order
             src_ip = htonl(src_ip);
@@ -1649,8 +1657,18 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             }
             struct Sock *svr_sock = get_estab(temp_pidfd);
             ack_num = seq_num + 1;
-            seq_num = 0;
- 
+            if (find_seq(temp_pidfd)) {
+                if (svr_sock->state.compare("ESTAB") != 0) {
+                    seq_list[temp_pidfd] = seq_list[temp_pidfd] + 1;
+                }
+                seq_num = get_seq(temp_pidfd);
+                printf("3\n");
+            } else {
+                svr_sock->seq = svr_sock->seq + 1;
+                seq_num = svr_sock->seq;
+                printf("4\n");
+            }
+
             // change order to network order
             src_ip = htonl(src_ip);
             dst_ip = htonl(dst_ip);
