@@ -601,11 +601,14 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         uint32_t seq_num = 0;
         if (find_seq(pidfd)) {
             seq_num = htonl(get_seq(pidfd));
+            //printf("x\n");
         } else {
             if (s.compare("ESTAB") == 0) {
                 estab_sock->seq = estab_sock->seq + 1;
+                //printf("y\n");
             }
             seq_num = htonl(estab_sock->seq);
+            //printf("z\n");
         }
         packet->writeData(14 + 20 + 4, &seq_num, 4);
 
@@ -805,7 +808,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     
     // write sequence number
     uint32_t seq_num = htonl(rand());
-    printf("seq_num is %d\n", ntohl(seq_num));
+    //printf("seq_num is %d\n", ntohl(seq_num));
     packet->writeData(14 + 20 + 4, &seq_num, 4);
     seq_list.insert(make_pair(pidfd, ntohl(seq_num)));
 
@@ -1262,6 +1265,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 sock.state = "SYN_RCVD";
                 the_set->push_back(sock);
             }
+            //printf("starting seq is %d\n", seq_num);
         }
 
         // change order to network order
@@ -1394,14 +1398,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 if (iter->first == temp_pidfd) {
                     //printf("ACK3-loop\n");
                     auto *set_ptr = &iter->second;
-
-                    /* ############################################################
-                       ## CHANGE find built-in to new defined iterating function ##
-                       ############################################################ */
                     for (auto iter2 = set_ptr->begin();iter2 != set_ptr->end();iter2++) {
                         if (*iter2 == sock) {
                             struct Sock *tmp_sock_ptr = (struct Sock *)&(*iter2);
                             memcpy(unestab_sock, tmp_sock_ptr, sizeof(struct Sock));
+                            //printf("seq is %d\n", unestab_sock->seq);
                             //printf("ACK3-loop erase\n");
                             set_ptr->erase(iter2);
                             //printf("ACK3-loop erase done\n");
@@ -1569,7 +1570,8 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         flag = true;
                         found = true;
                         in_cq = true;
-                        memcpy(cq_sock, (struct Sock *)&iter2, sizeof(struct Sock));
+                        //printf("found seq is %d\n", iter2->seq);
+                        memcpy(cq_sock, (struct Sock *)&(*iter2), sizeof(struct Sock));
                         temp_pidfd = iter->first;
                         break;
                     }
@@ -1614,7 +1616,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             ack_num = seq_num + 1;
             cq_sock->seq = cq_sock->seq + 1;
             seq_num = cq_sock->seq;
-            printf("2\n");
+            //printf("fin seq is %d\n", cq_sock->seq);
  
             // change order to network order
             src_ip = htonl(src_ip);
@@ -1662,11 +1664,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     seq_list[temp_pidfd] = seq_list[temp_pidfd] + 1;
                 }
                 seq_num = get_seq(temp_pidfd);
-                printf("3\n");
+                //printf("3\n");
             } else {
                 svr_sock->seq = svr_sock->seq + 1;
                 seq_num = svr_sock->seq;
-                printf("4\n");
+                //printf("4\n");
             }
 
             // change order to network order

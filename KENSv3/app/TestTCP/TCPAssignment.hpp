@@ -40,8 +40,8 @@ struct PidFd {
 struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
+    uint32_t seq = 0;
     string state = "CLOSED";
-    uint32_t seq;
     Sock(){
         this->src_addr.sin_family = AF_INET;
         this->dst_addr.sin_family = AF_INET;
