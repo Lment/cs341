@@ -600,6 +600,10 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         // write sequence number
         estab_sock->seq = estab_sock->seq + 1;
         uint32_t seq_num = htonl(estab_sock->seq);
+        if (find_seq(pidfd)) {
+            seq_list[pidfd] = get_seq(pidfd) + 1;
+            seq_num = htonl(get_seq(pidfd));
+        }
         packet->writeData(14 + 20 + 4, &seq_num, 4);
 
         // fill in extra data
@@ -798,6 +802,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     
     // write sequence number
     uint32_t seq_num = htonl(rand());
+    printf("seq_num is %d\n", ntohl(seq_num));
     packet->writeData(14 + 20 + 4, &seq_num, 4);
     seq_list.insert(make_pair(pidfd, ntohl(seq_num)));
 
@@ -1111,7 +1116,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         
         // set ack to seq_num + 1
         ack_num = seq_num + 1;
-
+        if (find_seq(*pidfd)) {
+            seq_num = get_seq(*pidfd) + 1;
+        }
+        
         // get ack flag
         uint8_t ack = ack_flag;
 
@@ -1120,6 +1128,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         dst_ip = htonl(dst_ip);
         src_port = htons(src_port);
         dst_port = htons(dst_port);
+        seq_num = htonl(seq_num);
         ack_num = htonl(ack_num);
 
         // write data to packet
@@ -1127,6 +1136,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         send->writeData(14 + 16, &dst_ip, 4);
         send->writeData(14 + 20 + 0, &src_port, 2);
         send->writeData(14 + 20 + 2, &dst_port, 2);
+        send->writeData(14 + 20 + 4, &seq_num, 4);
         send->writeData(14 + 20 + 8, &ack_num, 4);
         send->writeData(14 + 20 + 12, &offset, 1);
         send->writeData(14 + 20 + 13, &ack, 1);
