@@ -823,9 +823,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     sock->dst_addr = *svr_addr_in;
 
     struct Sock *new_sock_cli = (struct Sock *)malloc(sizeof(struct Sock));
+    struct Sock *new_sock_bind = (struct Sock *)malloc(sizeof(struct Sock));
     memcpy(new_sock_cli, sock, sizeof(struct Sock));
-
-    bind_list.insert(make_pair(pidfd, *new_sock_cli));
+    memcpy(new_sock_bind, sock, sizeof(struct Sock));
+    bind_list[pidfd] = *new_sock_bind;
     cli_list.insert(make_pair(pidfd, *new_sock_cli));
     reversed_cli_list.insert(make_pair(*new_sock_cli, pidfd));
     uuid_list.insert(make_pair(pidfd, syscallUUID));
@@ -1201,9 +1202,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
 
         if (simul_case) { // simultaneous case
-            seq_num = 0;
-            uint8_t ack = ack_flag;
-            send->writeData(14 + 20 + 13, &ack, 1);
+            ack_num = seq_num + 1;
+            seq_num = get_seq(temp_pidfd);
+            uint8_t synack = synack_flag;
+            send->writeData(14 + 20 + 13, &synack, 1);
         } else {
 
             if (!find_listenq(temp_pidfd)) {
