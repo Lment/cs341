@@ -47,6 +47,11 @@ void TCPAssignment::initialize()
     uuid_list.clear();
     seq_list.clear();
     accept_info_list.clear();
+    close_list.clear();
+    timer_list.clear();
+    read_info_list.clear();
+    read_buffer_list.clear();
+    
 }
 
 void TCPAssignment::finalize()
@@ -207,6 +212,28 @@ bool TCPAssignment::find_completeq(struct PidFd pidfd) {
 bool TCPAssignment::find_accept_info(struct PidFd pidfd) {
     bool flag = false;
     for (auto iter = accept_info_list.begin();iter != accept_info_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_read_info(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = read_info_list.begin();iter != read_info_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_read_buffer(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = read_buffer_list.begin();iter != read_buffer_list.end();iter++) {
         if (iter->first == pidfd) {
             flag = true;
             break;
@@ -397,6 +424,36 @@ deque<struct Sock> *TCPAssignment::get_completeq(struct PidFd pidfd) {
     assert(flag == true);
     return lq;
 }
+
+deque<uint8_t> *TCPAssignment::get_read_buffer(struct PidFd pidfd) {
+    deque<uint8_t> *lq;
+    int flag = false;
+    for (auto iter = read_buffer_list.begin();iter != read_buffer_list.end();iter++) {
+        if (iter->first == pidfd) {
+            lq = &iter->second;
+            flag = true;
+            break;
+         }
+    }
+    assert(flag == true);
+    return lq;
+}
+
+
+pair<UUID, pair<void *, size_t>> *TCPAssignment::get_read_info(struct PidFd pidfd) {
+    pair<UUID, pair<void *, size_t>> *res_ptr;
+    int flag = false;
+    for (auto iter = read_info_list.begin();iter != read_info_list.end();iter++) {
+        if (iter->first == pidfd) {
+            res_ptr = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return res_ptr;
+}
+
 
 void TCPAssignment::remove_sock(struct PidFd pidfd) {
     for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
@@ -966,6 +1023,53 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struc
     return;
 }
 
+void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
+{
+    struct PidFd pidfd = PidFd(pid, fd);
+    
+    if (!find_estab(pidfd)) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    }
+
+    uint8_t *buffer = (uint8_t *)buf;
+
+   if (!find_read_buffer(pidfd)) {
+        read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
+        return;
+    } else {
+        size_t read_b = 0;
+        deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
+        while ((read_b < count) &&
+                !(read_buffer->empty())) {
+            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+            read_buffer->pop_front();
+            buffer++;
+            read_b++;
+        }
+        returnSystemCall(syscallUUID, read_b);
+        return;
+    }
+}
+
+void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
+{
+/*
+    struct PidFd pidfd = PidFd(pid, fd)
+
+    if !find_estab(pidfd) {
+        returnSystemCall(syscallUUID, -1);
+        return;
+    }
+
+    struct Sock *sock = malloc(sizeof(struct Sock));
+    memcpy(sock, get_estab(pidfd), sizeof(struct Sock));
+    size_t cnt_sum = count;
+    uint8_t *buffer = (uint8_t *)buf;
+    uint8_t max = max_size;
+*/  
+}
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -973,14 +1077,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	case SOCKET: // Project1
 		this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
-	case CLOSE: // Project1, 2-2
+	case CLOSE: // Project1, 2-2, 3-1
 		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
-	case READ:
-		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+	case READ: // Project3-1
+		this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
-	case WRITE:
-		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+	case WRITE: // Project3-1
+		this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT: // Project2-1
 		this->syscall_connect(syscallUUID, pid, param.param1_int,
@@ -1332,7 +1436,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             } else if (estab_state.compare("SIMUL_C") == 0) {
                 struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
                 memcpy(tmp_ptr, &estab_pidfd, sizeof(struct PidFd));
-                timer_list.insert(make_pair(*estab_pidfd, tmp_ptr));
+                //timer_list.insert(make_pair(*estab_pidfd, tmp_ptr));
                 this->addTimer(tmp_ptr, 3);
                 estab_sock->state = "TIME_W";
             } else {
@@ -1617,7 +1721,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 svr_sock->state = "TIME_W";
                 struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
                 memcpy(tmp_ptr, &temp_pidfd, sizeof(struct PidFd));
-                timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
+                //timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
                 this->addTimer(tmp_ptr, 3);
                 this->sendPacket("IPv4", send);
                 //printf("SEND ACK\n");
