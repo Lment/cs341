@@ -1025,6 +1025,7 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struc
 
 void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
 {
+    //printf("CALL READ\n");
     struct PidFd pidfd = PidFd(pid, fd);
     
     if (!find_estab(pidfd)) {
@@ -1034,14 +1035,16 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 
     uint8_t *buffer = (uint8_t *)buf;
 
-   if (!find_read_buffer(pidfd)) {
+   if (!find_read_buffer(pidfd) ||
+        (find_read_buffer(pidfd) &&
+        get_read_buffer(pidfd)->empty())) {
         read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
         return;
     } else {
         size_t read_b = 0;
         deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
         while ((read_b < count) &&
-                !(read_buffer->empty())) {
+                (!read_buffer->empty())) {
             memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
             read_buffer->pop_front();
             buffer++;
@@ -1054,6 +1057,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
 {
+    //printf("CALL WRITE\n");
 /*
     struct PidFd pidfd = PidFd(pid, fd)
 
@@ -1387,7 +1391,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
     case ack_flag: {
         //printf("GET ACK\n");
-        if (find_reversed_estab(sock)) {
+        if (find_reversed_estab(sock)) { // Comment: Receive ACK from established connection during data transfer and connection teardown
             struct PidFd *estab_pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
             memcpy(estab_pidfd, get_reversed_estab(sock), sizeof(struct PidFd));
             
@@ -1400,7 +1404,75 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             struct Sock *estab_sock = get_estab(*estab_pidfd);
 
             string estab_state = estab_sock->state;
-            if (estab_state.compare("FIN_W1") == 0) {
+            if (estab_state.compare("ESTAB") == 0) { /* ||
+                (estab_state.compare("FIN_W1") &&
+                () */
+                size_t data_len = packet->getSize() - 54;
+                
+                if (data_len > 0) {
+                    for (unsigned int i = 0;i < data_len;i++) {
+                        uint8_t data;
+                        packet->readData(54 + i, &data, 1);
+                        if (!find_read_buffer(*estab_pidfd)) {
+                            deque<uint8_t> new_read_buffer;
+                            new_read_buffer.clear();
+                            read_buffer_list[*estab_pidfd] = new_read_buffer;
+                        }
+                        get_read_buffer(*estab_pidfd)->push_back(data);
+                    }
+
+                    if (find_read_info(*estab_pidfd)) {
+                        pair<UUID, pair<void *, size_t>> *read_info = get_read_info(*estab_pidfd);
+                        UUID read_uuid = read_info->first;
+                        uint8_t *buffer = (uint8_t *)read_info->second.first;
+                        size_t read_len = read_info->second.second;
+
+                        size_t read_b = 0;
+                        deque<uint8_t> *read_buffer = get_read_buffer(*estab_pidfd);
+                        while ((read_b < read_len) &&
+                                (!read_buffer->empty())) {
+                            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+                            read_buffer->pop_front();
+                            buffer++;
+                            read_b++;
+                        }
+                        read_info_list.erase(*estab_pidfd);
+                        returnSystemCall(read_uuid, read_b);
+                    }
+
+                    send = this->allocatePacket(54);
+
+                    src_ip = htonl(src_ip);
+                    dst_ip = htonl(dst_ip);
+                    src_port = htons(src_port);
+                    dst_port = htons(dst_port);
+                    ack_num = htonl(seq_num + data_len);
+                    seq_num = htonl(seq_num);
+
+                    // write data to packet
+                    send->writeData(14 + 12, &src_ip, 4);
+                    send->writeData(14 + 16, &dst_ip, 4);
+                    send->writeData(14 + 20 + 0, &src_port, 2);
+                    send->writeData(14 + 20 + 2, &dst_port, 2);
+                    send->writeData(14 + 20 + 4, &seq_num, 4);
+                    send->writeData(14 + 20 + 8, &ack_num, 4);
+                    send->writeData(14 + 20 + 12, &offset, 1);
+                    uint8_t ack = ack_flag;
+                    send->writeData(14 + 20 + 13, &ack, 1);
+                    send->writeData(14 + 20 + 14, &window, 2); // handle window size after
+
+                    // calculate checksum
+                    uint16_t zero_2b = 0;
+                    send->writeData(14 + 20 + 16, &zero_2b, 2);
+                    uint8_t *tcp_header = (uint8_t *)malloc(20);
+                    send->readData(14 + 20, tcp_header, 20);
+                    uint16_t checksum = htons(~NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20));
+                    send->writeData(14 + 20 + 16, &checksum, 2);
+                    this->freePacket(packet);
+                    this->sendPacket("IPv4", send);
+                    //printf("SEND ACK\n");
+                }
+            } else if (estab_state.compare("FIN_W1") == 0) {
                 estab_sock->state = "FIN_W2";
             } else if (estab_state.compare("LAST_ACK") == 0) {
                 if (!find_close(*estab_pidfd)) {
@@ -1444,7 +1516,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->freePacket(packet);
                 return;
             }
-        } else {
+        } else { // Comment: Receive ACK from unestablished connection during connection setup
             struct PidFd temp_pidfd;
 
             bool flag = false;
