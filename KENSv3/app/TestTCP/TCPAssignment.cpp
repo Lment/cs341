@@ -1447,8 +1447,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     src_port = htons(src_port);
                     dst_port = htons(dst_port);
                     ack_num = htonl(seq_num + data_len);
-                    seq_num = htonl(seq_num);
-
+                    if (find_seq(*estab_pidfd)) {
+                        seq_num = htonl(get_seq(*estab_pidfd)); // handle seq number later
+                    } else {
+                        seq_num = htonl(sock.seq);
+                    }
                     // write data to packet
                     send->writeData(14 + 12, &src_ip, 4);
                     send->writeData(14 + 16, &dst_ip, 4);
@@ -1580,6 +1583,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     remove_cli(temp_pidfd);
                     cli_sock->state = "ESTAB";
                     estab_list.insert(make_pair(temp_pidfd, *cli_sock));
+                    reversed_estab_list.insert(make_pair(*cli_sock, temp_pidfd));
                     get_sock(temp_pidfd)->state = "ESTAB";
                     returnSystemCall(uuid, 0);
                     this->freePacket(packet);
@@ -1608,6 +1612,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                         unestab_sock->state = "ESTAB";
                         estab_list.insert(make_pair(new_pidfd, *unestab_sock));
+                        reversed_estab_list.insert(make_pair(*unestab_sock, new_pidfd));
  
                         struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
                         memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
