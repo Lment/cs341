@@ -127,7 +127,7 @@ protected:
     map<struct PidFd, pair<UUID, pair<void *, size_t>>> read_info_list;
     map<struct PidFd, deque<uint8_t>> read_buffer_list;
     map<struct PidFd, pair<size_t, map<int, Packet *>>> internal_buffer_list;
-    map<struct PidFd, map<UUID, deque<Packet *>>> blocked_packet_list;
+    map<struct PidFd, map<UUID, deque<pair<int, Packet *>>>> blocked_packet_list;
     map<struct PidFd, deque<pair<UUID, size_t>>> blocked_uuid_list;   
 
     int used_port[65536 - 1024] = {0};
@@ -176,7 +176,7 @@ protected:
     virtual pair<UUID, pair<void *, size_t>> *get_read_info(struct PidFd pidfd);
     virtual deque<uint8_t> *get_read_buffer(struct PidFd pidfd);
     virtual pair<size_t, map<int, Packet *>> *get_internal_buffer(struct PidFd pidfd);
-    virtual map<UUID, deque<Packet *>> *get_blocked_packet(struct PidFd pidfd);
+    virtual map<UUID, deque<pair<int, Packet *>>> *get_blocked_packet(struct PidFd pidfd);
     virtual deque<pair<UUID, size_t>> *get_blocked_uuid(struct PidFd pidfd);
  
     virtual void remove_sock(struct PidFd pidfd);
