@@ -51,7 +51,9 @@ void TCPAssignment::initialize()
     timer_list.clear();
     read_info_list.clear();
     read_buffer_list.clear();
-    
+    internal_buffer_list.clear();
+    blocked_packet_list.clear();
+    blocked_uuid_list.clear();
 }
 
 void TCPAssignment::finalize()
@@ -234,6 +236,39 @@ bool TCPAssignment::find_read_info(struct PidFd pidfd) {
 bool TCPAssignment::find_read_buffer(struct PidFd pidfd) {
     bool flag = false;
     for (auto iter = read_buffer_list.begin();iter != read_buffer_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_blocked_packet(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = blocked_packet_list.begin();iter != blocked_packet_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_internal_buffer(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = internal_buffer_list.begin();iter != internal_buffer_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
+bool TCPAssignment::find_blocked_uuid(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = blocked_uuid_list.begin();iter != blocked_uuid_list.end();iter++) {
         if (iter->first == pidfd) {
             flag = true;
             break;
@@ -454,6 +489,47 @@ pair<UUID, pair<void *, size_t>> *TCPAssignment::get_read_info(struct PidFd pidf
     return res_ptr;
 }
 
+pair<size_t, map<int, Packet *>> *TCPAssignment::get_internal_buffer(struct PidFd pidfd) {
+    pair<size_t, map<int, Packet *>> *res_ptr;
+    int flag = false;
+    for (auto iter = internal_buffer_list.begin();iter != internal_buffer_list.end();iter++) {
+        if (iter->first == pidfd) {
+            res_ptr = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return res_ptr;
+}
+
+map<UUID, deque<Packet *>> *TCPAssignment::get_blocked_packet(struct PidFd pidfd) {
+    map<UUID, deque<Packet *>> *res_ptr;
+    int flag = false;
+    for (auto iter = blocked_packet_list.begin();iter != blocked_packet_list.end();iter++) {
+        if (iter->first == pidfd) {
+            res_ptr = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return res_ptr;
+}
+
+deque<pair<UUID, size_t>> *TCPAssignment::get_blocked_uuid(struct PidFd pidfd) {
+    deque<pair<UUID, size_t>> *res_ptr;
+    int flag = false;
+    for (auto iter = blocked_uuid_list.begin();iter != blocked_uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            res_ptr = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return res_ptr;
+}
 
 void TCPAssignment::remove_sock(struct PidFd pidfd) {
     for (auto iter = sock_list.begin();iter != sock_list.end();iter++) {
@@ -1066,11 +1142,13 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
         return;
     }
 
-    struct Sock *sock = (struct Sock *)malloc(sizeof(struct Sock));
-    memcpy(sock, get_estab(pidfd), sizeof(struct Sock));
+    struct Sock *sock = get_estab(pidfd);//(struct Sock *)malloc(sizeof(struct Sock));
+    //memcpy(sock, get_estab(pidfd), sizeof(struct Sock));
     size_t total_cnt = count;
     uint8_t *buffer = (uint8_t *)buf;
     size_t max_s = max_size;
+
+    bool internal_buffer_flag = true;
 
     while (total_cnt > 0) {
         size_t current_cnt;
@@ -1095,14 +1173,21 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
         packet->writeData(14 + 16, &dst_ip, 4);
         packet->writeData(14 + 20 + 0, &src_port, 2);
         packet->writeData(14 + 20 + 2, &dst_port, 2);
-
-        uint32_t seq_num;
+ 
+        uint32_t seq_num = 0;
     
         if (find_seq(pidfd)) {
             uint32_t cli_seq = get_seq(pidfd);
             seq_num = htonl(cli_seq);
             seq_list[pidfd] = cli_seq + current_cnt;
-        } else {
+       } else {
+            if (sock->svr_write_first == 1) { // MUST MUST MUST MUST FIX IT (WHEN SERVER GET SYN, SEQ SHOULD BE 1+);
+//#################################################################################################################################
+//################################################################################################################################
+ 
+                sock->seq = sock->seq + 1;
+                sock->svr_write_first = 0;
+            }
             uint32_t svr_seq = sock->seq;
             seq_num = htonl(svr_seq);
             sock->seq = svr_seq + current_cnt;
@@ -1134,10 +1219,60 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
         checksum = htons(checksum);
         packet->writeData(14 + 20 + 16, &checksum, 2);
 
-        this->sendPacket("Ipv4", packet);
-    }
-}
+        if (!find_internal_buffer(pidfd)) {
+            size_t init_zero = 0;
+            map<int, Packet *> new_map;
+            new_map.clear();
+            internal_buffer_list[pidfd] = make_pair(init_zero, new_map);
+        }
 
+        auto *ib = get_internal_buffer(pidfd);
+        if (ib->first + current_cnt <= ntohs(window)) {
+            this->sendPacket("IPv4", packet);
+            ib->first = ib->first + current_cnt;
+            Packet *internal_packet = this->clonePacket(packet);
+            int ack_expected;
+            if (find_seq(pidfd)) {
+                ack_expected = get_seq(pidfd);
+            } else {
+                ack_expected = sock->seq;
+            }        
+            ib->second[ack_expected] = internal_packet;
+            if (last_flag) {
+                returnSystemCall(syscallUUID, count);
+            }
+        } else {
+            if (!find_blocked_packet(pidfd)) {
+                map<UUID, deque<Packet *>> new_map;
+                new_map.clear();
+                blocked_packet_list[pidfd] = new_map;
+            }
+
+            if (!find_blocked_uuid(pidfd)) {
+                deque<pair<UUID, size_t>> new_deque;
+                new_deque.clear();
+                blocked_uuid_list[pidfd] = new_deque;
+            }
+            
+            auto *bu = get_blocked_uuid(pidfd);
+            if (bu->back().first != syscallUUID) {
+                bu->push_back(make_pair(syscallUUID, count));
+            }
+            
+            auto *bp = get_blocked_packet(pidfd);
+            if (bp->find(syscallUUID) == bp->end()) {
+                deque<Packet *> new_deque;
+                new_deque.push_back(packet);
+                bp->insert(make_pair(syscallUUID, new_deque));
+            } else {
+                bp->find(syscallUUID)->second.push_back(packet);
+            }
+        }
+        buffer = buffer + current_cnt;
+    }
+    return;
+}
+            
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -1410,6 +1545,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 deque<struct Sock> new_set;
                 sock.seq = seq_num;
                 sock.ack = ack_num;
+                sock.svr_write_first = 1;
                 sock.state = "SYN_RCVD";
                 new_set.push_back(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
@@ -1417,6 +1553,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 deque<struct Sock> *the_set = get_svr(temp_pidfd);
                 sock.seq = seq_num;
                 sock.ack = ack_num;
+                sock.svr_write_first = 1;
                 sock.state = "SYN_RCVD";
                 the_set->push_back(sock);
             }
@@ -1475,7 +1612,44 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 (estab_state.compare("FIN_W1") &&
                 () */
                 size_t data_len = packet->getSize() - 54;
-                
+                if (find_internal_buffer(*estab_pidfd)) {
+                    int ack_received = ack_num;
+                    auto *ib = get_internal_buffer(*estab_pidfd);
+                    Packet *tmp_p = ib->second.find(ack_received)->second;
+                    size_t tmp_size = tmp_p->getSize() - 54;
+                    ib->second.erase(ack_received);
+                    ib->first = ib->first - tmp_size;
+                    if (find_blocked_uuid(*estab_pidfd)) {
+                        auto *bu = get_blocked_uuid(*estab_pidfd);
+                        auto *bp = get_blocked_packet(*estab_pidfd);
+                        if (!bu->empty()) {
+                            UUID cur_uuid = bu->front().first;
+                            Packet *cur_packet = bp->find(cur_uuid)->second.front();
+                            size_t cur_size = cur_packet->getSize() - 54;
+                            while (ib->first + cur_size <= 51200) { // handle this to window size
+                                bp->find(cur_uuid)->second.pop_front();
+                                Packet *ib_packet = this->clonePacket(cur_packet);
+                                this->sendPacket("IPv4", cur_packet);
+                                //ib->second.insert(make_pair(ib_packet)); //########MUST HANDLE IT !!!!!!!!!!!
+//#################################################################################################################################
+//################################################################################################################################
+                                //ib->first = ib->first + cur_packet->getSize() - 54;
+                                if (bp->find(cur_uuid)->second.empty()) {
+                                    size_t return_size = bu->front().second;
+                                    returnSystemCall(cur_uuid, return_size);
+                                    bu->pop_front();
+                                    bp->erase(cur_uuid);
+                                }
+                                if (bu->empty()) {
+                                    break;
+                                }
+                                cur_uuid = bu->front().first;
+                                cur_packet = bp->find(cur_uuid)->second.front();
+                                cur_size = cur_packet->getSize() - 54;
+                            }
+                        }
+                    }
+                }
                 if (data_len > 0) {
                     for (unsigned int i = 0;i < data_len;i++) {
                         uint8_t data;

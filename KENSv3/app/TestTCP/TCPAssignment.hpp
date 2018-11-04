@@ -43,6 +43,7 @@ struct Sock {
     struct sockaddr_in dst_addr;
     uint32_t seq = 0;
     uint32_t ack = 0;
+    uint32_t svr_write_first = 0;
     string state = "CLOSED";
     Sock(){
         this->src_addr.sin_family = AF_INET;
@@ -125,7 +126,9 @@ protected:
     map<struct PidFd, struct PidFd *> timer_list;
     map<struct PidFd, pair<UUID, pair<void *, size_t>>> read_info_list;
     map<struct PidFd, deque<uint8_t>> read_buffer_list;
-    
+    map<struct PidFd, pair<size_t, map<int, Packet *>>> internal_buffer_list;
+    map<struct PidFd, map<UUID, deque<Packet *>>> blocked_packet_list;
+    map<struct PidFd, deque<pair<UUID, size_t>>> blocked_uuid_list;   
 
     int used_port[65536 - 1024] = {0};
     static const uint8_t fin_flag = 0b00000001;
@@ -153,7 +156,10 @@ protected:
     virtual bool find_accept_info(struct PidFd pidfd);
     virtual bool find_read_info(struct PidFd pidfd);
     virtual bool find_read_buffer(struct PidFd pidfd);
-
+    virtual bool find_blocked_packet(struct PidFd pidfd);
+    virtual bool find_internal_buffer(struct PidFd pidfd);
+    virtual bool find_blocked_uuid(struct PidFd pidfd);
+ 
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
     virtual struct Sock *get_cli(struct PidFd pidfd);
@@ -169,6 +175,9 @@ protected:
     virtual set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> *get_accept_info(struct PidFd pidfd);
     virtual pair<UUID, pair<void *, size_t>> *get_read_info(struct PidFd pidfd);
     virtual deque<uint8_t> *get_read_buffer(struct PidFd pidfd);
+    virtual pair<size_t, map<int, Packet *>> *get_internal_buffer(struct PidFd pidfd);
+    virtual map<UUID, deque<Packet *>> *get_blocked_packet(struct PidFd pidfd);
+    virtual deque<pair<UUID, size_t>> *get_blocked_uuid(struct PidFd pidfd);
  
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
