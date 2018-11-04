@@ -15,6 +15,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
+#include <algorithm>
 
 
 #include <E/E_TimerModule.hpp>
@@ -41,6 +42,7 @@ struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
     uint32_t seq = 0;
+    uint32_t ack = 0;
     string state = "CLOSED";
     Sock(){
         this->src_addr.sin_family = AF_INET;

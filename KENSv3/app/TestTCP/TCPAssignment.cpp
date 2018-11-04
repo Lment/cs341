@@ -1035,9 +1035,10 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 
     uint8_t *buffer = (uint8_t *)buf;
 
-   if (!find_read_buffer(pidfd) ||
-        (find_read_buffer(pidfd) &&
-        get_read_buffer(pidfd)->empty())) {
+    if (!find_read_buffer(pidfd)) {
+        read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
+        return;
+    } else if (find_read_buffer(pidfd) && get_read_buffer(pidfd)->empty()) {
         read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
         return;
     } else {
@@ -1058,20 +1059,83 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
 {
     //printf("CALL WRITE\n");
-/*
-    struct PidFd pidfd = PidFd(pid, fd)
+    struct PidFd pidfd = PidFd(pid, fd);
 
-    if !find_estab(pidfd) {
+    if (!find_estab(pidfd)) {
         returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    struct Sock *sock = malloc(sizeof(struct Sock));
+    struct Sock *sock = (struct Sock *)malloc(sizeof(struct Sock));
     memcpy(sock, get_estab(pidfd), sizeof(struct Sock));
-    size_t cnt_sum = count;
+    size_t total_cnt = count;
     uint8_t *buffer = (uint8_t *)buf;
-    uint8_t max = max_size;
-*/  
+    size_t max_s = max_size;
+
+    while (total_cnt > 0) {
+        size_t current_cnt;
+        bool last_flag = false;
+        
+        current_cnt = min(total_cnt, max_s);
+        total_cnt = total_cnt - current_cnt;
+        if (total_cnt == 0) {
+            last_flag = true;
+        }
+        
+        uint16_t packet_size = 54 + current_cnt;
+        uint32_t src_ip = sock->src_addr.sin_addr.s_addr;
+        uint32_t dst_ip = sock->dst_addr.sin_addr.s_addr;
+        uint16_t src_port = sock->src_addr.sin_port;
+        uint16_t dst_port = sock->dst_addr.sin_port;
+        
+        Packet *packet = allocatePacket(packet_size);
+        
+        packet->writeData(14 + 2, &packet_size, 2);
+        packet->writeData(14 + 12, &src_ip, 4);
+        packet->writeData(14 + 16, &dst_ip, 4);
+        packet->writeData(14 + 20 + 0, &src_port, 2);
+        packet->writeData(14 + 20 + 2, &dst_port, 2);
+
+        uint32_t seq_num;
+    
+        if (find_seq(pidfd)) {
+            uint32_t cli_seq = get_seq(pidfd);
+            seq_num = htonl(cli_seq);
+            seq_list[pidfd] = cli_seq + current_cnt;
+        } else {
+            uint32_t svr_seq = sock->seq;
+            seq_num = htonl(svr_seq);
+            sock->seq = svr_seq + current_cnt;
+        }
+
+        packet->writeData(14 + 20 + 4, &seq_num, 4);
+
+        uint32_t ack_num = htonl(sock->ack); // handle ack number
+        packet->writeData(14 + 20 + 8, &ack_num, 4);
+        
+        // fill in extra data
+        uint32_t zero_4b = 0;
+        uint8_t offset = 80;
+        uint16_t window = htons((uint16_t)51200);
+        uint32_t ack = ack_flag;
+        packet->writeData(14 + 20 + 12, &offset, 1);
+        packet->writeData(14 + 20 + 13, &ack, 1);
+        packet->writeData(14 + 20 + 14, &window, 2);
+        packet->writeData(14 + 20 + 16, &zero_4b, 4);
+
+        // write data
+        packet->writeData(14 + 20 + 20, buffer, current_cnt);
+    
+        // calculate checksum
+        uint8_t *tcp_header = (uint8_t *)malloc(20 + max_s);
+        packet->readData(14 + 20, tcp_header, 20 + current_cnt);
+   
+        uint16_t checksum = ~(NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20 + current_cnt));
+        checksum = htons(checksum);
+        packet->writeData(14 + 20 + 16, &checksum, 2);
+
+        this->sendPacket("Ipv4", packet);
+    }
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
@@ -1254,6 +1318,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         the_sock->state = "ESTAB";
         the_sock->src_addr = src_addr;
         the_sock->dst_addr = dst_addr;
+        the_sock->ack = ntohl(ack_num);
         remove_cli(*pidfd);
         remove_reversed_cli(*the_sock);
         struct Sock *new_sock = (struct Sock *)malloc(sizeof(struct Sock));
@@ -1344,12 +1409,14 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             if (!find_svr(temp_pidfd)) {
                 deque<struct Sock> new_set;
                 sock.seq = seq_num;
+                sock.ack = ack_num;
                 sock.state = "SYN_RCVD";
                 new_set.push_back(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
             } else {
                 deque<struct Sock> *the_set = get_svr(temp_pidfd);
                 sock.seq = seq_num;
+                sock.ack = ack_num;
                 sock.state = "SYN_RCVD";
                 the_set->push_back(sock);
             }
@@ -1429,8 +1496,10 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                         size_t read_b = 0;
                         deque<uint8_t> *read_buffer = get_read_buffer(*estab_pidfd);
-                        while ((read_b < read_len) &&
-                                (!read_buffer->empty())) {
+                        while (read_b < read_len) {
+                            if (read_buffer->empty()) {
+                                break;
+                            }
                             memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
                             read_buffer->pop_front();
                             buffer++;
