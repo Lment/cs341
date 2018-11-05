@@ -777,6 +777,11 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
             remove_listenq(pidfd);
             remove_completeq(pidfd);
             remove_accept_info(pidfd);
+            read_info_list.erase(pidfd);
+            read_buffer_list.erase(pidfd);
+            internal_buffer_list.erase(pidfd);
+            blocked_packet_list.erase(pidfd);
+            blocked_uuid_list.erase(pidfd);
 
             removeFileDescriptor(pid, fd);
             returnSystemCall(syscallUUID, 0);
@@ -1114,22 +1119,24 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
     if (!find_read_buffer(pidfd)) {
         read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
         return;
-    } else if (find_read_buffer(pidfd) && get_read_buffer(pidfd)->empty()) {
+    }
+    
+    if (get_read_buffer(pidfd)->empty()) {
         read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
         return;
-    } else {
-        size_t read_b = 0;
-        deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
-        while ((read_b < count) &&
-                (!read_buffer->empty())) {
-            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
-            read_buffer->pop_front();
-            buffer++;
-            read_b++;
-        }
-        returnSystemCall(syscallUUID, read_b);
-        return;
     }
+
+    size_t read_b = 0;
+    deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
+    while ((read_b < count) &&
+            (!read_buffer->empty())) {
+        memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+        read_buffer->pop_front();
+        buffer++;
+        read_b++;
+    }
+    returnSystemCall(syscallUUID, read_b);
+    return;
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
@@ -1743,6 +1750,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 remove_listenq(*estab_pidfd);
                 remove_completeq(*estab_pidfd);
                 remove_accept_info(*estab_pidfd);
+                read_info_list.erase(*estab_pidfd);
+                read_buffer_list.erase(*estab_pidfd);
+                internal_buffer_list.erase(*estab_pidfd);
+                blocked_packet_list.erase(*estab_pidfd);
+                blocked_uuid_list.erase(*estab_pidfd);
 
                 removeFileDescriptor(estab_pidfd->pid, estab_pidfd->fd);
                 returnSystemCall(close_uuid, 0);
@@ -2044,6 +2056,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 svr_sock->state = "CLOSE_W";
                 this->sendPacket("IPv4", send);
                 //printf("SEND ACK\n");
+                returnSystemCall(read_info_list[temp_pidfd].first, -1);
             } else if (tmp_state.compare("FIN_W1") == 0) {
                 svr_sock->state = "SIMUL_C";
                 this->sendPacket("IPv4", send);
@@ -2093,6 +2106,11 @@ void TCPAssignment::timerCallback(void* payload)
     remove_listenq(*pidfd);
     remove_completeq(*pidfd);
     remove_accept_info(*pidfd);
+    read_info_list.erase(*pidfd);
+    read_buffer_list.erase(*pidfd);
+    internal_buffer_list.erase(*pidfd);
+    blocked_packet_list.erase(*pidfd);
+    blocked_uuid_list.erase(*pidfd);
 }
 
 }
