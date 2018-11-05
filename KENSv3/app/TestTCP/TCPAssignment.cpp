@@ -688,7 +688,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-    printf("CALL CLOSE\n");
+    //printf("CALL CLOSE\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
@@ -751,7 +751,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         close_list.insert(make_pair(pidfd, syscallUUID));
         this->sendPacket("IPv4", packet);
         returnSystemCall(syscallUUID, 0);
-        printf("SEND FIN\n");
+        //printf("SEND FIN\n");
         return;
     } else {
             if (find_listenq(pidfd)) {
@@ -1147,8 +1147,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
     size_t total_cnt = count;
     uint8_t *buffer = (uint8_t *)buf;
     size_t max_s = max_size;
-
-    bool internal_buffer_flag = true;
 
     while (total_cnt > 0) {
         size_t current_cnt;
