@@ -688,7 +688,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int type, int prot
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-    printf("CALL CLOSE\n");
+    //printf("CALL CLOSE\n");
     struct PidFd pidfd = PidFd(pid, fd);
 
     if (!find_sock(pidfd)) {
