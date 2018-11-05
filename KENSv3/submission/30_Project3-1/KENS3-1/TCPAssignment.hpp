@@ -43,7 +43,6 @@ struct Sock {
     struct sockaddr_in dst_addr;
     uint32_t seq = 0;
     uint32_t ack = 0;
-    uint32_t svr_write_first = 0;
     string state = "CLOSED";
     Sock(){
         this->src_addr.sin_family = AF_INET;

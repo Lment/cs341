@@ -722,10 +722,10 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         if (find_seq(pidfd)) {
             seq_num = htonl(get_seq(pidfd));
         } else {
+            seq_num = htonl(estab_sock->seq);
             if (s.compare("ESTAB") == 0) {
                 estab_sock->seq = estab_sock->seq + 1;
             }
-            seq_num = htonl(estab_sock->seq);
         }
         packet->writeData(14 + 20 + 4, &seq_num, 4);
 
@@ -1179,13 +1179,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
             seq_num = htonl(cli_seq);
             seq_list[pidfd] = cli_seq + current_cnt;
        } else {
-            if (sock->svr_write_first == 1) { // MUST MUST MUST MUST FIX IT (WHEN SERVER GET SYN, SEQ SHOULD BE 1+);
-//#################################################################################################################################
-//################################################################################################################################
- 
-                sock->seq = sock->seq + 1;
-                sock->svr_write_first = 0;
-            }
             uint32_t svr_seq = sock->seq;
             seq_num = htonl(svr_seq);
             sock->seq = svr_seq + current_cnt;
@@ -1545,20 +1538,17 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
             uint8_t synack = synack_flag;
             send->writeData(14 + 20 + 13, &synack, 1);
- 
             if (!find_svr(temp_pidfd)) {
                 deque<struct Sock> new_set;
-                sock.seq = seq_num;
+                sock.seq = seq_num + 1;
                 sock.ack = ack_num;
-                sock.svr_write_first = 1;
                 sock.state = "SYN_RCVD";
                 new_set.push_back(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
             } else {
                 deque<struct Sock> *the_set = get_svr(temp_pidfd);
-                sock.seq = seq_num;
+                sock.seq = seq_num + 1;
                 sock.ack = ack_num;
-                sock.svr_write_first = 1;
                 sock.state = "SYN_RCVD";
                 the_set->push_back(sock);
             }
@@ -1636,9 +1626,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                                 bp->find(cur_uuid)->second.pop_front();
                                 Packet *ib_packet = this->clonePacket(cur_packet);
                                 this->sendPacket("IPv4", cur_packet);
-                                ib->second.insert(make_pair(expected_ack, ib_packet)); //########MUST HANDLE IT !!!!!!!!!!!
-//#################################################################################################################################
-//################################################################################################################################
+                                ib->second.insert(make_pair(expected_ack, ib_packet));
                                 ib->first = ib->first + cur_size;
                                 if (bp->find(cur_uuid)->second.empty()) {
                                     size_t return_size = bu->front().second;
@@ -1700,7 +1688,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     if (find_seq(*estab_pidfd)) {
                         seq_num = htonl(get_seq(*estab_pidfd)); // handle seq number later
                     } else {
-                        seq_num = htonl(sock.seq);
+                        seq_num = htonl(estab_sock->seq);
                     }
                     // write data to packet
                     send->writeData(14 + 12, &src_ip, 4);
@@ -1841,7 +1829,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 }
             } else { // not simultaneous case (server received ack from client)
                 // check the validity of ack number
-                if (unestab_sock->seq + 1 != ack_num) {
+                if (unestab_sock->seq != ack_num) {
                     this->freePacket(packet);
                     return;
                 }
@@ -1962,7 +1950,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
         if (in_cq) { // if sock in completeq matches
             ack_num = seq_num + 1;
-            cq_sock->seq = cq_sock->seq + 1;
+            cq_sock->seq = cq_sock->seq; //+ 1;
             seq_num = cq_sock->seq;
  
             // change order to network order
@@ -2010,7 +1998,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 }
                 seq_num = get_seq(temp_pidfd);
             } else {
-                svr_sock->seq = svr_sock->seq + 1;
+                svr_sock->seq = svr_sock->seq;// + 1;
                 seq_num = svr_sock->seq;
             }
 
