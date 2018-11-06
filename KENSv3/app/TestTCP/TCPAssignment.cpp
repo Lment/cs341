@@ -47,13 +47,6 @@ void TCPAssignment::initialize()
     uuid_list.clear();
     seq_list.clear();
     accept_info_list.clear();
-    close_list.clear();
-    timer_list.clear();
-    read_info_list.clear();
-    read_buffer_list.clear();
-    internal_buffer_list.clear();
-    blocked_packet_list.clear();
-    blocked_uuid_list.clear();
 }
 
 void TCPAssignment::finalize()
@@ -214,61 +207,6 @@ bool TCPAssignment::find_completeq(struct PidFd pidfd) {
 bool TCPAssignment::find_accept_info(struct PidFd pidfd) {
     bool flag = false;
     for (auto iter = accept_info_list.begin();iter != accept_info_list.end();iter++) {
-        if (iter->first == pidfd) {
-            flag = true;
-            break;
-        }
-    }
-    return flag;
-}
-
-bool TCPAssignment::find_read_info(struct PidFd pidfd) {
-    bool flag = false;
-    for (auto iter = read_info_list.begin();iter != read_info_list.end();iter++) {
-        if (iter->first == pidfd) {
-            flag = true;
-            break;
-        }
-    }
-    return flag;
-}
-
-bool TCPAssignment::find_read_buffer(struct PidFd pidfd) {
-    bool flag = false;
-    for (auto iter = read_buffer_list.begin();iter != read_buffer_list.end();iter++) {
-        if (iter->first == pidfd) {
-            flag = true;
-            break;
-        }
-    }
-    return flag;
-}
-
-bool TCPAssignment::find_blocked_packet(struct PidFd pidfd) {
-    bool flag = false;
-    for (auto iter = blocked_packet_list.begin();iter != blocked_packet_list.end();iter++) {
-        if (iter->first == pidfd) {
-            flag = true;
-            break;
-        }
-    }
-    return flag;
-}
-
-bool TCPAssignment::find_internal_buffer(struct PidFd pidfd) {
-    bool flag = false;
-    for (auto iter = internal_buffer_list.begin();iter != internal_buffer_list.end();iter++) {
-        if (iter->first == pidfd) {
-            flag = true;
-            break;
-        }
-    }
-    return flag;
-}
-
-bool TCPAssignment::find_blocked_uuid(struct PidFd pidfd) {
-    bool flag = false;
-    for (auto iter = blocked_uuid_list.begin();iter != blocked_uuid_list.end();iter++) {
         if (iter->first == pidfd) {
             flag = true;
             break;
@@ -458,77 +396,6 @@ deque<struct Sock> *TCPAssignment::get_completeq(struct PidFd pidfd) {
     }
     assert(flag == true);
     return lq;
-}
-
-deque<uint8_t> *TCPAssignment::get_read_buffer(struct PidFd pidfd) {
-    deque<uint8_t> *lq;
-    int flag = false;
-    for (auto iter = read_buffer_list.begin();iter != read_buffer_list.end();iter++) {
-        if (iter->first == pidfd) {
-            lq = &iter->second;
-            flag = true;
-            break;
-         }
-    }
-    assert(flag == true);
-    return lq;
-}
-
-
-pair<UUID, pair<void *, size_t>> *TCPAssignment::get_read_info(struct PidFd pidfd) {
-    pair<UUID, pair<void *, size_t>> *res_ptr;
-    int flag = false;
-    for (auto iter = read_info_list.begin();iter != read_info_list.end();iter++) {
-        if (iter->first == pidfd) {
-            res_ptr = &iter->second;
-            flag = true;
-            break;
-        }
-    }
-    assert(flag == true);
-    return res_ptr;
-}
-
-pair<size_t, map<int, Packet *>> *TCPAssignment::get_internal_buffer(struct PidFd pidfd) {
-    pair<size_t, map<int, Packet *>> *res_ptr;
-    int flag = false;
-    for (auto iter = internal_buffer_list.begin();iter != internal_buffer_list.end();iter++) {
-        if (iter->first == pidfd) {
-            res_ptr = &iter->second;
-            flag = true;
-            break;
-        }
-    }
-    assert(flag == true);
-    return res_ptr;
-}
-
-map<UUID, deque<pair<int, Packet *>>> *TCPAssignment::get_blocked_packet(struct PidFd pidfd) {
-    map<UUID, deque<pair<int, Packet *>>> *res_ptr;
-    int flag = false;
-    for (auto iter = blocked_packet_list.begin();iter != blocked_packet_list.end();iter++) {
-        if (iter->first == pidfd) {
-            res_ptr = &iter->second;
-            flag = true;
-            break;
-        }
-    }
-    assert(flag == true);
-    return res_ptr;
-}
-
-deque<pair<UUID, size_t>> *TCPAssignment::get_blocked_uuid(struct PidFd pidfd) {
-    deque<pair<UUID, size_t>> *res_ptr;
-    int flag = false;
-    for (auto iter = blocked_uuid_list.begin();iter != blocked_uuid_list.end();iter++) {
-        if (iter->first == pidfd) {
-            res_ptr = &iter->second;
-            flag = true;
-            break;
-        }
-    }
-    assert(flag == true);
-    return res_ptr;
 }
 
 void TCPAssignment::remove_sock(struct PidFd pidfd) {
@@ -722,10 +589,10 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
         if (find_seq(pidfd)) {
             seq_num = htonl(get_seq(pidfd));
         } else {
-            seq_num = htonl(estab_sock->seq);
             if (s.compare("ESTAB") == 0) {
                 estab_sock->seq = estab_sock->seq + 1;
             }
+            seq_num = htonl(estab_sock->seq);
         }
         packet->writeData(14 + 20 + 4, &seq_num, 4);
 
@@ -777,11 +644,6 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
             remove_listenq(pidfd);
             remove_completeq(pidfd);
             remove_accept_info(pidfd);
-            read_info_list.erase(pidfd);
-            read_buffer_list.erase(pidfd);
-            internal_buffer_list.erase(pidfd);
-            blocked_packet_list.erase(pidfd);
-            blocked_uuid_list.erase(pidfd);
 
             removeFileDescriptor(pid, fd);
             returnSystemCall(syscallUUID, 0);
@@ -1104,180 +966,6 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, struc
     return;
 }
 
-void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
-{
-    //printf("CALL READ\n");
-    struct PidFd pidfd = PidFd(pid, fd);
-    
-    if (!find_estab(pidfd)) {
-        returnSystemCall(syscallUUID, -1);
-        return;
-    }
-
-    uint8_t *buffer = (uint8_t *)buf;
-
-    if (!find_read_buffer(pidfd)) {
-        read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
-        return;
-    }
-    
-    if (get_read_buffer(pidfd)->empty()) {
-        read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
-        return;
-    }
-
-    size_t read_b = 0;
-    deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
-    while ((read_b < count) &&
-            (!read_buffer->empty())) {
-        memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
-        read_buffer->pop_front();
-        buffer++;
-        read_b++;
-    }
-    returnSystemCall(syscallUUID, read_b);
-    return;
-}
-
-void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
-{
-    //printf("CALL WRITE\n");
-    struct PidFd pidfd = PidFd(pid, fd);
-
-    if (!find_estab(pidfd)) {
-        returnSystemCall(syscallUUID, -1);
-        return;
-    }
-
-    struct Sock *sock = get_estab(pidfd);//(struct Sock *)malloc(sizeof(struct Sock));
-    //memcpy(sock, get_estab(pidfd), sizeof(struct Sock));
-    size_t total_cnt = count;
-    uint8_t *buffer = (uint8_t *)buf;
-    size_t max_s = max_size;
-
-    while (total_cnt > 0) {
-        size_t current_cnt;
-        bool last_flag = false;
-        
-        current_cnt = min(total_cnt, max_s);
-        total_cnt = total_cnt - current_cnt;
-        if (total_cnt == 0) {
-            last_flag = true;
-        }
-        
-        uint16_t packet_size = 54 + current_cnt;
-        uint32_t src_ip = sock->src_addr.sin_addr.s_addr;
-        uint32_t dst_ip = sock->dst_addr.sin_addr.s_addr;
-        uint16_t src_port = sock->src_addr.sin_port;
-        uint16_t dst_port = sock->dst_addr.sin_port;
-        
-        Packet *packet = allocatePacket(packet_size);
-        
-        packet->writeData(14 + 2, &packet_size, 2);
-        packet->writeData(14 + 12, &src_ip, 4);
-        packet->writeData(14 + 16, &dst_ip, 4);
-        packet->writeData(14 + 20 + 0, &src_port, 2);
-        packet->writeData(14 + 20 + 2, &dst_port, 2);
- 
-        uint32_t seq_num = 0;
-    
-        if (find_seq(pidfd)) {
-            uint32_t cli_seq = get_seq(pidfd);
-            seq_num = htonl(cli_seq);
-            seq_list[pidfd] = cli_seq + current_cnt;
-       } else {
-            uint32_t svr_seq = sock->seq;
-            seq_num = htonl(svr_seq);
-            sock->seq = svr_seq + current_cnt;
-        }
-
-        packet->writeData(14 + 20 + 4, &seq_num, 4);
-
-        uint32_t ack_num = htonl(sock->ack); // handle ack number
-        packet->writeData(14 + 20 + 8, &ack_num, 4);
-        
-        // fill in extra data
-        uint32_t zero_4b = 0;
-        uint8_t offset = 80;
-        uint16_t window = htons((uint16_t)51200);
-        uint32_t ack = ack_flag;
-        packet->writeData(14 + 20 + 12, &offset, 1);
-        packet->writeData(14 + 20 + 13, &ack, 1);
-        packet->writeData(14 + 20 + 14, &window, 2);
-        packet->writeData(14 + 20 + 16, &zero_4b, 4);
-
-        // write data
-        packet->writeData(14 + 20 + 20, buffer, current_cnt);
-    
-        // calculate checksum
-        uint8_t *tcp_header = (uint8_t *)malloc(20 + max_s);
-        packet->readData(14 + 20, tcp_header, 20 + current_cnt);
-   
-        uint16_t checksum = ~(NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20 + current_cnt));
-        checksum = htons(checksum);
-        packet->writeData(14 + 20 + 16, &checksum, 2);
-
-        if (!find_internal_buffer(pidfd)) {
-            size_t init_zero = 0;
-            map<int, Packet *> new_map;
-            new_map.clear();
-            internal_buffer_list[pidfd] = make_pair(init_zero, new_map);
-        }
-
-        auto *ib = get_internal_buffer(pidfd);
-        if (ib->first + current_cnt <= ntohs(window)) {
-            this->sendPacket("IPv4", packet);
-            ib->first = ib->first + current_cnt;
-            Packet *internal_packet = this->clonePacket(packet);
-            int ack_expected;
-            if (find_seq(pidfd)) {
-                ack_expected = get_seq(pidfd);
-            } else {
-                ack_expected = sock->seq;
-            }        
-            ib->second[ack_expected] = internal_packet;
-            if (last_flag) {
-                returnSystemCall(syscallUUID, count);
-            }
-        } else {
-            if (!find_blocked_packet(pidfd)) {
-                map<UUID, deque<pair<int, Packet *>>> new_map;
-                new_map.clear();
-                blocked_packet_list[pidfd] = new_map;
-            }
-
-            if (!find_blocked_uuid(pidfd)) {
-                deque<pair<UUID, size_t>> new_deque;
-                new_deque.clear();
-                blocked_uuid_list[pidfd] = new_deque;
-            }
-            
-            auto *bu = get_blocked_uuid(pidfd);
-            if (bu->back().first != syscallUUID) {
-                bu->push_back(make_pair(syscallUUID, count));
-            }
-
-            int ack_expected;
-            if (find_seq(pidfd)) {
-                ack_expected = get_seq(pidfd);
-            } else {
-                ack_expected = sock->seq;
-            }        
-
-            auto *bp = get_blocked_packet(pidfd);
-            if (bp->find(syscallUUID) == bp->end()) {
-                deque<pair<int, Packet *>> new_deque;
-                new_deque.push_back(make_pair(ack_expected, packet));
-                bp->insert(make_pair(syscallUUID, new_deque));
-            } else {
-                bp->find(syscallUUID)->second.push_back(make_pair(ack_expected, packet));
-            }
-        }
-        buffer = buffer + current_cnt;
-    }
-    return;
-}
-            
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -1285,14 +973,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	case SOCKET: // Project1
 		this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
-	case CLOSE: // Project1, 2-2, 3-1
+	case CLOSE: // Project1, 2-2
 		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
-	case READ: // Project3-1
-		this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+	case READ:
+		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
-	case WRITE: // Project3-1
-		this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+	case WRITE:
+		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT: // Project2-1
 		this->syscall_connect(syscallUUID, pid, param.param1_int,
@@ -1458,7 +1146,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         the_sock->state = "ESTAB";
         the_sock->src_addr = src_addr;
         the_sock->dst_addr = dst_addr;
-        the_sock->ack = ntohl(ack_num);
         remove_cli(*pidfd);
         remove_reversed_cli(*the_sock);
         struct Sock *new_sock = (struct Sock *)malloc(sizeof(struct Sock));
@@ -1545,17 +1232,16 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
             uint8_t synack = synack_flag;
             send->writeData(14 + 20 + 13, &synack, 1);
+ 
             if (!find_svr(temp_pidfd)) {
                 deque<struct Sock> new_set;
-                sock.seq = seq_num + 1;
-                sock.ack = ack_num;
+                sock.seq = seq_num;
                 sock.state = "SYN_RCVD";
                 new_set.push_back(sock);
                 svr_list.insert(make_pair(temp_pidfd, new_set));
             } else {
                 deque<struct Sock> *the_set = get_svr(temp_pidfd);
-                sock.seq = seq_num + 1;
-                sock.ack = ack_num;
+                sock.seq = seq_num;
                 sock.state = "SYN_RCVD";
                 the_set->push_back(sock);
             }
@@ -1597,7 +1283,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
         }
     case ack_flag: {
         //printf("GET ACK\n");
-        if (find_reversed_estab(sock)) { // Comment: Receive ACK from established connection during data transfer and connection teardown
+        if (find_reversed_estab(sock)) {
             struct PidFd *estab_pidfd = (struct PidFd *)malloc(sizeof(struct PidFd));
             memcpy(estab_pidfd, get_reversed_estab(sock), sizeof(struct PidFd));
             
@@ -1610,117 +1296,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             struct Sock *estab_sock = get_estab(*estab_pidfd);
 
             string estab_state = estab_sock->state;
-            if (estab_state.compare("ESTAB") == 0) { /* ||
-                (estab_state.compare("FIN_W1") &&
-                () */
-                size_t data_len = packet->getSize() - 54;
-                if (find_internal_buffer(*estab_pidfd)) {
-                    int ack_received = ack_num;
-                    auto *ib = get_internal_buffer(*estab_pidfd);
-                    Packet *tmp_p = ib->second.find(ack_received)->second;
-                    size_t tmp_size = tmp_p->getSize() - 54;
-                    ib->second.erase(ack_received);
-                    ib->first = ib->first - tmp_size;
-                    if (find_blocked_uuid(*estab_pidfd)) {
-                        auto *bu = get_blocked_uuid(*estab_pidfd);
-                        auto *bp = get_blocked_packet(*estab_pidfd);
-                        if (!bu->empty()) {
-                            UUID cur_uuid = bu->front().first;
-                            Packet *cur_packet = bp->find(cur_uuid)->second.front().second;
-                            int expected_ack = bp->find(cur_uuid)->second.front().first;
-                            size_t cur_size = cur_packet->getSize() - 54;
-                            while (ib->first + cur_size <= 51200) { // handle this to window size
-                                bp->find(cur_uuid)->second.pop_front();
-                                Packet *ib_packet = this->clonePacket(cur_packet);
-                                this->sendPacket("IPv4", cur_packet);
-                                ib->second.insert(make_pair(expected_ack, ib_packet));
-                                ib->first = ib->first + cur_size;
-                                if (bp->find(cur_uuid)->second.empty()) {
-                                    size_t return_size = bu->front().second;
-                                    returnSystemCall(cur_uuid, return_size);
-                                    bu->pop_front();
-                                    bp->erase(cur_uuid);
-                                }
-                                if (bu->empty()) {
-                                    break;
-                                }
-                                cur_uuid = bu->front().first;
-                                cur_packet = bp->find(cur_uuid)->second.front().second;
-                                expected_ack = bp->find(cur_uuid)->second.front().first;
-                                cur_size = cur_packet->getSize() - 54;
-                            }
-                        }
-                    }
-                }
-                if (data_len > 0) {
-                    for (unsigned int i = 0;i < data_len;i++) {
-                        uint8_t data;
-                        packet->readData(54 + i, &data, 1);
-                        if (!find_read_buffer(*estab_pidfd)) {
-                            deque<uint8_t> new_read_buffer;
-                            new_read_buffer.clear();
-                            read_buffer_list[*estab_pidfd] = new_read_buffer;
-                        }
-                        get_read_buffer(*estab_pidfd)->push_back(data);
-                    }
-
-                    if (find_read_info(*estab_pidfd)) {
-                        pair<UUID, pair<void *, size_t>> *read_info = get_read_info(*estab_pidfd);
-                        UUID read_uuid = read_info->first;
-                        uint8_t *buffer = (uint8_t *)read_info->second.first;
-                        size_t read_len = read_info->second.second;
-
-                        size_t read_b = 0;
-                        deque<uint8_t> *read_buffer = get_read_buffer(*estab_pidfd);
-                        while (read_b < read_len) {
-                            if (read_buffer->empty()) {
-                                break;
-                            }
-                            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
-                            read_buffer->pop_front();
-                            buffer++;
-                            read_b++;
-                        }
-                        read_info_list.erase(*estab_pidfd);
-                        returnSystemCall(read_uuid, read_b);
-                    }
-
-                    send = this->allocatePacket(54);
-
-                    src_ip = htonl(src_ip);
-                    dst_ip = htonl(dst_ip);
-                    src_port = htons(src_port);
-                    dst_port = htons(dst_port);
-                    ack_num = htonl(seq_num + data_len);
-                    if (find_seq(*estab_pidfd)) {
-                        seq_num = htonl(get_seq(*estab_pidfd)); // handle seq number later
-                    } else {
-                        seq_num = htonl(estab_sock->seq);
-                    }
-                    // write data to packet
-                    send->writeData(14 + 12, &src_ip, 4);
-                    send->writeData(14 + 16, &dst_ip, 4);
-                    send->writeData(14 + 20 + 0, &src_port, 2);
-                    send->writeData(14 + 20 + 2, &dst_port, 2);
-                    send->writeData(14 + 20 + 4, &seq_num, 4);
-                    send->writeData(14 + 20 + 8, &ack_num, 4);
-                    send->writeData(14 + 20 + 12, &offset, 1);
-                    uint8_t ack = ack_flag;
-                    send->writeData(14 + 20 + 13, &ack, 1);
-                    send->writeData(14 + 20 + 14, &window, 2); // handle window size after
-
-                    // calculate checksum
-                    uint16_t zero_2b = 0;
-                    send->writeData(14 + 20 + 16, &zero_2b, 2);
-                    uint8_t *tcp_header = (uint8_t *)malloc(20);
-                    send->readData(14 + 20, tcp_header, 20);
-                    uint16_t checksum = htons(~NetworkUtil::tcp_sum(src_ip, dst_ip, tcp_header, 20));
-                    send->writeData(14 + 20 + 16, &checksum, 2);
-                    this->freePacket(packet);
-                    this->sendPacket("IPv4", send);
-                    //printf("SEND ACK\n");
-                }
-            } else if (estab_state.compare("FIN_W1") == 0) {
+            if (estab_state.compare("FIN_W1") == 0) {
                 estab_sock->state = "FIN_W2";
             } else if (estab_state.compare("LAST_ACK") == 0) {
                 if (!find_close(*estab_pidfd)) {
@@ -1750,18 +1326,13 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 remove_listenq(*estab_pidfd);
                 remove_completeq(*estab_pidfd);
                 remove_accept_info(*estab_pidfd);
-                read_info_list.erase(*estab_pidfd);
-                read_buffer_list.erase(*estab_pidfd);
-                internal_buffer_list.erase(*estab_pidfd);
-                blocked_packet_list.erase(*estab_pidfd);
-                blocked_uuid_list.erase(*estab_pidfd);
 
                 removeFileDescriptor(estab_pidfd->pid, estab_pidfd->fd);
                 returnSystemCall(close_uuid, 0);
             } else if (estab_state.compare("SIMUL_C") == 0) {
                 struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
                 memcpy(tmp_ptr, &estab_pidfd, sizeof(struct PidFd));
-                //timer_list.insert(make_pair(*estab_pidfd, tmp_ptr));
+                timer_list.insert(make_pair(*estab_pidfd, tmp_ptr));
                 this->addTimer(tmp_ptr, 3);
                 estab_sock->state = "TIME_W";
             } else {
@@ -1769,7 +1340,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->freePacket(packet);
                 return;
             }
-        } else { // Comment: Receive ACK from unestablished connection during connection setup
+        } else {
             struct PidFd temp_pidfd;
 
             bool flag = false;
@@ -1833,7 +1404,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     remove_cli(temp_pidfd);
                     cli_sock->state = "ESTAB";
                     estab_list.insert(make_pair(temp_pidfd, *cli_sock));
-                    reversed_estab_list.insert(make_pair(*cli_sock, temp_pidfd));
                     get_sock(temp_pidfd)->state = "ESTAB";
                     returnSystemCall(uuid, 0);
                     this->freePacket(packet);
@@ -1841,7 +1411,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 }
             } else { // not simultaneous case (server received ack from client)
                 // check the validity of ack number
-                if (unestab_sock->seq != ack_num) {
+                if (unestab_sock->seq + 1 != ack_num) {
                     this->freePacket(packet);
                     return;
                 }
@@ -1862,7 +1432,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                         unestab_sock->state = "ESTAB";
                         estab_list.insert(make_pair(new_pidfd, *unestab_sock));
-                        reversed_estab_list.insert(make_pair(*unestab_sock, new_pidfd));
  
                         struct Sock *brand_new_sock = (struct Sock *)malloc(sizeof(struct Sock));
                         memcpy(brand_new_sock, unestab_sock, sizeof(struct Sock));
@@ -1962,7 +1531,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
         if (in_cq) { // if sock in completeq matches
             ack_num = seq_num + 1;
-            cq_sock->seq = cq_sock->seq; //+ 1;
+            cq_sock->seq = cq_sock->seq + 1;
             seq_num = cq_sock->seq;
  
             // change order to network order
@@ -2010,7 +1579,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 }
                 seq_num = get_seq(temp_pidfd);
             } else {
-                svr_sock->seq = svr_sock->seq;// + 1;
+                svr_sock->seq = svr_sock->seq + 1;
                 seq_num = svr_sock->seq;
             }
 
@@ -2048,7 +1617,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 svr_sock->state = "TIME_W";
                 struct PidFd *tmp_ptr = (struct PidFd *)malloc(sizeof(struct PidFd));
                 memcpy(tmp_ptr, &temp_pidfd, sizeof(struct PidFd));
-                //timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
+                timer_list.insert(make_pair(temp_pidfd, tmp_ptr));
                 this->addTimer(tmp_ptr, 3);
                 this->sendPacket("IPv4", send);
                 //printf("SEND ACK\n");
@@ -2056,7 +1625,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 svr_sock->state = "CLOSE_W";
                 this->sendPacket("IPv4", send);
                 //printf("SEND ACK\n");
-                returnSystemCall(read_info_list[temp_pidfd].first, -1);
             } else if (tmp_state.compare("FIN_W1") == 0) {
                 svr_sock->state = "SIMUL_C";
                 this->sendPacket("IPv4", send);
@@ -2106,11 +1674,6 @@ void TCPAssignment::timerCallback(void* payload)
     remove_listenq(*pidfd);
     remove_completeq(*pidfd);
     remove_accept_info(*pidfd);
-    read_info_list.erase(*pidfd);
-    read_buffer_list.erase(*pidfd);
-    internal_buffer_list.erase(*pidfd);
-    blocked_packet_list.erase(*pidfd);
-    blocked_uuid_list.erase(*pidfd);
 }
 
 }
