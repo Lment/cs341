@@ -15,6 +15,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
+#include <algorithm>
 
 
 #include <E/E_TimerModule.hpp>
@@ -41,6 +42,7 @@ struct Sock {
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
     uint32_t seq = 0;
+    uint32_t ack = 0;
     string state = "CLOSED";
     Sock(){
         this->src_addr.sin_family = AF_INET;
@@ -121,12 +123,18 @@ protected:
     map<struct PidFd, UUID> close_list; // all closed sockets(connections)
     // timer list
     map<struct PidFd, struct PidFd *> timer_list;
+    map<struct PidFd, pair<UUID, pair<void *, size_t>>> read_info_list;
+    map<struct PidFd, deque<uint8_t>> read_buffer_list;
+    map<struct PidFd, pair<size_t, map<int, Packet *>>> internal_buffer_list;
+    map<struct PidFd, map<UUID, deque<pair<int, Packet *>>>> blocked_packet_list;
+    map<struct PidFd, deque<pair<UUID, size_t>>> blocked_uuid_list;   
 
     int used_port[65536 - 1024] = {0};
     static const uint8_t fin_flag = 0b00000001;
     static const uint8_t syn_flag = 0b00000010;
     static const uint8_t ack_flag = 0b00010000;
     static const uint8_t synack_flag = syn_flag + ack_flag;
+    static const size_t max_size = 512;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(string fromModule, Packet* packet) final;
@@ -145,7 +153,12 @@ protected:
     virtual bool find_close(struct PidFd pidfd);
     virtual bool find_seq(struct PidFd pidfd);
     virtual bool find_accept_info(struct PidFd pidfd);
-
+    virtual bool find_read_info(struct PidFd pidfd);
+    virtual bool find_read_buffer(struct PidFd pidfd);
+    virtual bool find_blocked_packet(struct PidFd pidfd);
+    virtual bool find_internal_buffer(struct PidFd pidfd);
+    virtual bool find_blocked_uuid(struct PidFd pidfd);
+ 
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
     virtual struct Sock *get_cli(struct PidFd pidfd);
@@ -159,6 +172,11 @@ protected:
     virtual UUID get_uuid(struct PidFd pidfd);
     virtual UUID get_close(struct PidFd pidfd);
     virtual set<pair<UUID, pair<struct sockaddr *, socklen_t *>>> *get_accept_info(struct PidFd pidfd);
+    virtual pair<UUID, pair<void *, size_t>> *get_read_info(struct PidFd pidfd);
+    virtual deque<uint8_t> *get_read_buffer(struct PidFd pidfd);
+    virtual pair<size_t, map<int, Packet *>> *get_internal_buffer(struct PidFd pidfd);
+    virtual map<UUID, deque<pair<int, Packet *>>> *get_blocked_packet(struct PidFd pidfd);
+    virtual deque<pair<UUID, size_t>> *get_blocked_uuid(struct PidFd pidfd);
  
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
@@ -182,6 +200,8 @@ protected:
     virtual void syscall_listen(UUID syscallUUID, int pid, int fd, int backlog);
     virtual void syscall_accept(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen);
     virtual void syscall_getpeername(UUID syscallUUID, int pid, int fd, struct sockaddr *addr, socklen_t *addrlen);
+    virtual void syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count);
+    virtual void syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count);
 };
 
 class TCPAssignmentProvider
