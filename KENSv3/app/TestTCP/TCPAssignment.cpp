@@ -1328,6 +1328,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 {
+
     // read data from packet
     uint32_t src_ip;
     uint32_t dst_ip;
@@ -1347,7 +1348,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     packet->readData(14 + 20 + 13, &flag, 1);
     uint16_t window;
     packet->readData(14 + 20 + 14, &window, 2);
-
+    uint16_t rcvd_checksum;
+    packet->readData(14 + 20 + 16, &rcvd_checksum, 2);
+ 
     // construct sock structure
     struct sockaddr_in src_addr;
     struct sockaddr_in dst_addr;
@@ -1364,9 +1367,23 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     dst_port = ntohs(dst_port);
     seq_num = ntohl(seq_num);
     ack_num = ntohl(ack_num);
+    rcvd_checksum = ntohs(rcvd_checksum);
 
     // create packet from cloned packet, for each case of flag
     Packet *send = this->clonePacket(packet);
+
+    size_t payload_size = packet->getSize() - 54;
+    bool corrupted = false;
+
+    // calculate checksum validity
+    uint8_t *calc_header = (uint8_t *)malloc(20 + payload_size);
+    packet->readData(14 + 20, calc_header, 20 + payload_size);
+    memset(calc_header + 16, 0, 2);
+    uint16_t calc_checksum = ~NetworkUtil::tcp_sum(htonl(src_ip), htonl(dst_ip), calc_header, 20 + payload_size);
+    if (rcvd_checksum != calc_checksum) {
+        corrupted = true;
+        //cout << "CCCCCCCCCCCCCCCCCCCCCCCCC\n" <<"packet CORRUPTED\n" << "CCCCCCCCCCCCCCCCCCCCCCCCCCCC\n";
+    }
 
     switch (flag) {
     case synack_flag: {
@@ -1476,7 +1493,12 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     case syn_flag: {
         //printf("GET SYN\n");
         // server get syn from client connect
-        
+        if (corrupted) {
+            this->freePacket(packet);
+            this->freePacket(send);
+            return;
+        }
+    
         struct Sock temp_sock;
         struct PidFd temp_pidfd;
 
@@ -1532,16 +1554,18 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             auto *this_lq = &lq->second;
 
             if ((int)this_lq->size() >= backlog_size) {
-                this->freePacket(packet);
-                this->freePacket(send);
-                return;
+                if (this_lq->back() < sock) {
+                    this->freePacket(packet);
+                    this->freePacket(send);
+                    return;
+                }
             } else {
                 lq->second.push_back(sock);
             }
 
             // construct packet to send
             ack_num = seq_num + 1;
-            seq_num = rand();
+            seq_num = 0; // rand();
 
             uint8_t synack = synack_flag;
             send->writeData(14 + 20 + 13, &synack, 1);
