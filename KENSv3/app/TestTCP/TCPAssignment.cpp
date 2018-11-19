@@ -51,9 +51,12 @@ void TCPAssignment::initialize()
     timer_list.clear();
     read_info_list.clear();
     read_buffer_list.clear();
+    corrupted_buffer_list.clear();
     internal_buffer_list.clear();
     blocked_packet_list.clear();
     blocked_uuid_list.clear();
+    loss_max_list.clear();
+    read_count_list.clear();
 }
 
 void TCPAssignment::finalize()
@@ -276,6 +279,18 @@ bool TCPAssignment::find_blocked_uuid(struct PidFd pidfd) {
     }
     return flag;
 }
+
+bool TCPAssignment::find_loss_max(struct PidFd pidfd) {
+    bool flag = false;
+    for (auto iter = loss_max_list.begin();iter != loss_max_list.end();iter++) {
+        if (iter->first == pidfd) {
+            flag = true;
+            break;
+        }
+    }
+    return flag;
+}
+
 
 struct Sock *TCPAssignment::get_sock(struct PidFd pidfd) {
     struct Sock *sock;
@@ -521,6 +536,20 @@ deque<pair<UUID, size_t>> *TCPAssignment::get_blocked_uuid(struct PidFd pidfd) {
     deque<pair<UUID, size_t>> *res_ptr;
     int flag = false;
     for (auto iter = blocked_uuid_list.begin();iter != blocked_uuid_list.end();iter++) {
+        if (iter->first == pidfd) {
+            res_ptr = &iter->second;
+            flag = true;
+            break;
+        }
+    }
+    assert(flag == true);
+    return res_ptr;
+}
+
+pair<deque<uint32_t>, uint32_t> *TCPAssignment::get_loss_max(struct PidFd pidfd) {
+    pair<deque<uint32_t>, uint32_t> *res_ptr;
+    int flag = false;
+    for (auto iter = loss_max_list.begin();iter != loss_max_list.end();iter++) {
         if (iter->first == pidfd) {
             res_ptr = &iter->second;
             flag = true;
@@ -1126,17 +1155,40 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
         return;
     }
 
-    size_t read_b = 0;
-    deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
-    while ((read_b < count) &&
-            (!read_buffer->empty())) {
-        memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
-        read_buffer->pop_front();
-        buffer++;
-        read_b++;
+    if (read_count_list[pidfd].second) {
+        uint32_t to_read_size = read_count_list[pidfd].first;
+        if (to_read_size > 0) {
+            size_t read_b = 0;
+            deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
+            while ((read_b < count) &&
+                    (!read_buffer->empty()) &&
+                    (to_read_size - read_b > 0)) {
+                memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+                read_buffer->pop_front();
+                buffer++;
+                read_b++;
+            }
+            returnSystemCall(syscallUUID, read_b);
+            //cout << syscallUUID << " returned, size " << read_b << "\n";
+            read_count_list[pidfd].first = to_read_size - read_b;
+            return;
+        } else {
+            read_info_list[pidfd] = make_pair(syscallUUID, make_pair(buf, count));
+        }
+    } else {
+        size_t read_b = 0;
+        deque<uint8_t> *read_buffer = get_read_buffer(pidfd);
+         while ((read_b < count) &&
+                (!read_buffer->empty())) {
+            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+            read_buffer->pop_front();
+            buffer++;
+            read_b++;
+        }
+        returnSystemCall(syscallUUID, read_b);
+        //cout << syscallUUID << " returned, size " << read_b << "\n";
+        return;
     }
-    returnSystemCall(syscallUUID, read_b);
-    return;
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count)
@@ -1382,7 +1434,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
     uint16_t calc_checksum = ~NetworkUtil::tcp_sum(htonl(src_ip), htonl(dst_ip), calc_header, 20 + payload_size);
     if (rcvd_checksum != calc_checksum) {
         corrupted = true;
-        //cout << "CCCCCCCCCCCCCCCCCCCCCCCCC\n" <<"packet CORRUPTED\n" << "CCCCCCCCCCCCCCCCCCCCCCCCCCCC\n";
     }
 
     switch (flag) {
@@ -1634,11 +1685,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
             struct Sock *estab_sock = get_estab(*estab_pidfd);
 
             string estab_state = estab_sock->state;
-            if (estab_state.compare("ESTAB") == 0) { /* ||
-                (estab_state.compare("FIN_W1") &&
-                () */
+            if ((estab_state.compare("ESTAB") == 0) ||
+                (estab_state.compare("CLOSE_W") == 0) ||
+                (estab_state.compare("FIN_W1") == 0)) {
                 size_t data_len = packet->getSize() - 54;
-                if (find_internal_buffer(*estab_pidfd)) {
+                if (find_internal_buffer(*estab_pidfd)) { // write
                     int ack_received = ack_num;
                     auto *ib = get_internal_buffer(*estab_pidfd);
                     Packet *tmp_p = ib->second.find(ack_received)->second;
@@ -1676,37 +1727,134 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         }
                     }
                 }
-                if (data_len > 0) {
-                    for (unsigned int i = 0;i < data_len;i++) {
-                        uint8_t data;
-                        packet->readData(54 + i, &data, 1);
-                        if (!find_read_buffer(*estab_pidfd)) {
-                            deque<uint8_t> new_read_buffer;
-                            new_read_buffer.clear();
-                            read_buffer_list[*estab_pidfd] = new_read_buffer;
-                        }
-                        get_read_buffer(*estab_pidfd)->push_back(data);
-                    }
-
-                    if (find_read_info(*estab_pidfd)) {
-                        pair<UUID, pair<void *, size_t>> *read_info = get_read_info(*estab_pidfd);
-                        UUID read_uuid = read_info->first;
-                        uint8_t *buffer = (uint8_t *)read_info->second.first;
-                        size_t read_len = read_info->second.second;
-
-                        size_t read_b = 0;
-                        deque<uint8_t> *read_buffer = get_read_buffer(*estab_pidfd);
-                        while (read_b < read_len) {
-                            if (read_buffer->empty()) {
-                                break;
+                if (data_len > 0) { //read
+                    if (corrupted) { // packet corrupted
+                        //cout << "seq " << seq_num << " received --------------- corrupted\n";
+                        //cout << seq_num << " corrupted CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n";
+                        if (!find_loss_max(*estab_pidfd)) {
+                            deque<uint32_t> new_deq;
+                            new_deq.push_back(seq_num);
+                            uint32_t init_max = seq_num + data_len;
+                            loss_max_list[*estab_pidfd] = make_pair(new_deq, init_max);
+                            deque<uint8_t> new_corrupted_buffer;
+                            corrupted_buffer_list[*estab_pidfd] = new_corrupted_buffer;
+                        } else {
+                            auto *search_deq = &get_loss_max(*estab_pidfd)->first;
+                            auto cur_max = get_loss_max(*estab_pidfd)->second;
+                            if (seq_num == cur_max) {
+                                get_loss_max(*estab_pidfd)->second = seq_num + data_len;
+                                search_deq->push_back(seq_num);
                             }
-                            memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
-                            read_buffer->pop_front();
-                            buffer++;
-                            read_b++;
                         }
-                        read_info_list.erase(*estab_pidfd);
-                        returnSystemCall(read_uuid, read_b);
+                    } else { // packet not corrupted
+                        //cout << seq_num << " not corrupted\n";
+                        
+                        bool redundunt_flag = true;
+                        bool new_flag = false;
+                        bool resent_flag = false;
+                        if (!find_loss_max(*estab_pidfd)) {
+                            deque<uint32_t> new_deq;
+                            uint32_t init_max = seq_num + data_len;
+                            loss_max_list[*estab_pidfd] = make_pair(new_deq, init_max);
+                            new_flag = true;
+                            redundunt_flag = false;
+                            read_count_list[*estab_pidfd] = make_pair(0, false);
+                        } else {
+                            auto *search_deq = &get_loss_max(*estab_pidfd)->first;
+                            auto cur_max = get_loss_max(*estab_pidfd)->second;
+                            if (seq_num == cur_max) {
+                                get_loss_max(*estab_pidfd)->second = seq_num + data_len;
+                                new_flag = true;
+                                redundunt_flag = false;
+                                read_count_list[*estab_pidfd] = make_pair(0, false);
+                            } else {
+                                if (seq_num == search_deq->front()) {
+                                    search_deq->pop_front();
+                                    resent_flag = true;
+                                    redundunt_flag = false;
+                                    if (!search_deq->empty()) {
+                                        uint32_t to_read_size = search_deq->front() - seq_num - data_len;
+                                        read_count_list[*estab_pidfd] = make_pair(to_read_size, true);
+                                    } else {
+                                        read_count_list[*estab_pidfd] = make_pair(0, false);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (new_flag) {
+                            //cout << "seq " << seq_num << " received --------------- new arrived\n";
+                            for (unsigned int i = 0;i < data_len;i++) {
+                                uint8_t data;
+                                packet->readData(54 + i, &data, 1);
+                                if (!find_read_buffer(*estab_pidfd)) {
+                                    deque<uint8_t> new_read_buffer;
+                                    new_read_buffer.clear();
+                                    read_buffer_list[*estab_pidfd] = new_read_buffer;
+                                }
+                                get_read_buffer(*estab_pidfd)->push_back(data);
+                            }
+
+                            if (find_read_info(*estab_pidfd) && get_loss_max(*estab_pidfd)->first.empty()) {
+                                pair<UUID, pair<void *, size_t>> *read_info = get_read_info(*estab_pidfd);
+                                UUID read_uuid = read_info->first;
+                                uint8_t *buffer = (uint8_t *)read_info->second.first;
+                                size_t read_len = read_info->second.second;
+
+                                size_t read_b = 0;
+                                deque<uint8_t> *read_buffer = get_read_buffer(*estab_pidfd);
+                                while (read_b < read_len) {
+                                    if (read_buffer->empty()) {
+                                        break;
+                                    }
+                                    memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+                                    read_buffer->pop_front();
+                                    buffer++;
+                                    read_b++;
+                                }
+                                read_info_list.erase(*estab_pidfd);
+                                returnSystemCall(read_uuid, read_b);
+                                //cout << read_uuid << " returned, size " << read_b << "\n";
+                            }
+
+                           
+                        }
+
+                        if (resent_flag) {
+                            //cout << "seq " << seq_num << " received --------------- recovered\n";
+                            for (unsigned int i = 0;i < data_len;i++) {
+                                uint8_t data;
+                                packet->readData(54 + i, &data, 1);
+                                corrupted_buffer_list[*estab_pidfd].push_back(data);
+                            }
+
+                            if (find_read_info(*estab_pidfd)) {
+                                pair<UUID, pair<void *, size_t>> *read_info = get_read_info(*estab_pidfd);
+                                UUID read_uuid = read_info->first;
+                                uint8_t *buffer = (uint8_t *)read_info->second.first;
+                                size_t read_len = read_info->second.second;
+
+                                size_t read_b = 0;
+                                deque<uint8_t> *read_buffer = &corrupted_buffer_list[*estab_pidfd];
+                                while (read_b < read_len) {
+                                    if (read_buffer->empty()) {
+                                        break;
+                                    }
+                                    memcpy(buffer, &read_buffer->front(), sizeof(uint8_t));
+                                    read_buffer->pop_front();
+                                    buffer++;
+                                    read_b++;
+                                }
+                                read_info_list.erase(*estab_pidfd);
+                                returnSystemCall(read_uuid, read_b);
+                                //cout << read_uuid << " returned, size " << read_b << "\n";
+                            }
+                        }
+
+                        if (redundunt_flag) {
+                            //cout << "seq " << seq_num << " received --------------- redundunt\n";
+                            // do nothing
+                        }
                     }
 
                     send = this->allocatePacket(54);
@@ -1715,7 +1863,17 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     dst_ip = htonl(dst_ip);
                     src_port = htons(src_port);
                     dst_port = htons(dst_port);
-                    ack_num = htonl(seq_num + data_len);
+                    uint32_t new_ack_num;
+                    auto *loss_deq = &get_loss_max(*estab_pidfd)->first;
+                    auto cur_maximum = get_loss_max(*estab_pidfd)->second;
+                    //cout << loss_deq->front() << " " << cur_maximum << "\n";
+                    if (loss_deq->empty()) {
+                        new_ack_num = cur_maximum;
+                    } else {
+                        new_ack_num = loss_deq->front();
+                    }
+                    //cout << "ack " << new_ack_num << " sent\n";  
+                    ack_num = htonl(new_ack_num);
                     if (find_seq(*estab_pidfd)) {
                         seq_num = htonl(get_seq(*estab_pidfd)); // handle seq number later
                     } else {
@@ -2077,10 +2235,15 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 this->sendPacket("IPv4", send);
                 //printf("SEND ACK\n");
             } else if (tmp_state.compare("ESTAB") == 0) {
-                svr_sock->state = "CLOSE_W";
-                this->sendPacket("IPv4", send);
+                if(get_loss_max(temp_pidfd)->first.empty()) {
+                    svr_sock->state = "CLOSE_W";
+                    this->sendPacket("IPv4", send);
+                    returnSystemCall(read_info_list[temp_pidfd].first, -1);
+                    //cout << "HEEEEEEEEERE\n";
+                } else {
+                    this->freePacket(send);
+                }
                 //printf("SEND ACK\n");
-                returnSystemCall(read_info_list[temp_pidfd].first, -1);
             } else if (tmp_state.compare("FIN_W1") == 0) {
                 svr_sock->state = "SIMUL_C";
                 this->sendPacket("IPv4", send);

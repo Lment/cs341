@@ -125,10 +125,13 @@ protected:
     map<struct PidFd, struct PidFd *> timer_list;
     map<struct PidFd, pair<UUID, pair<void *, size_t>>> read_info_list;
     map<struct PidFd, deque<uint8_t>> read_buffer_list;
+    map<struct PidFd, deque<uint8_t>> corrupted_buffer_list;
     map<struct PidFd, pair<size_t, map<int, Packet *>>> internal_buffer_list;
     map<struct PidFd, map<UUID, deque<pair<int, Packet *>>>> blocked_packet_list;
-    map<struct PidFd, deque<pair<UUID, size_t>>> blocked_uuid_list;   
-
+    map<struct PidFd, deque<pair<UUID, size_t>>> blocked_uuid_list;
+    map<struct PidFd, pair<deque<uint32_t>, uint32_t>> loss_max_list;
+    map<struct PidFd, pair<int, bool>> read_count_list;
+ 
     int used_port[65536 - 1024] = {0};
     static const uint8_t fin_flag = 0b00000001;
     static const uint8_t syn_flag = 0b00000010;
@@ -158,6 +161,7 @@ protected:
     virtual bool find_blocked_packet(struct PidFd pidfd);
     virtual bool find_internal_buffer(struct PidFd pidfd);
     virtual bool find_blocked_uuid(struct PidFd pidfd);
+    virtual bool find_loss_max(struct PidFd pidfd);
  
     virtual struct Sock *get_sock(struct PidFd pidfd);
     virtual struct Sock *get_bind(struct PidFd pidfd);
@@ -177,6 +181,7 @@ protected:
     virtual pair<size_t, map<int, Packet *>> *get_internal_buffer(struct PidFd pidfd);
     virtual map<UUID, deque<pair<int, Packet *>>> *get_blocked_packet(struct PidFd pidfd);
     virtual deque<pair<UUID, size_t>> *get_blocked_uuid(struct PidFd pidfd);
+    virtual pair<deque<uint32_t>, uint32_t> *get_loss_max(struct PidFd pidfd);
  
     virtual void remove_sock(struct PidFd pidfd);
     virtual void remove_bind(struct PidFd pidfd);
