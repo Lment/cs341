@@ -999,6 +999,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, struct so
     uuid_list.insert(make_pair(pidfd, syscallUUID));
 
     this->sendPacket("IPv4", packet);
+    
     //printf("SEND SYN\n");
     return;
 }
@@ -1166,7 +1167,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
             read_b++;
         }
         returnSystemCall(syscallUUID, read_b);
-        //cout << syscallUUID << " 0 returned, size " << read_b << "\n";
+        ////cout << syscallUUID << " 0 returned, size " << read_b << "\n";
         return;
     }
 
@@ -1184,7 +1185,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
                 read_b++;
             }
             returnSystemCall(syscallUUID, read_b);
-            //cout << syscallUUID << " 1 returned, size " << read_b << "\n";
+            ////cout << syscallUUID << " 1 returned, size " << read_b << "\n";
             read_count_list[pidfd].first = to_read_size - read_b;
             return;
         } else {
@@ -1201,7 +1202,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
             read_b++;
         }
         returnSystemCall(syscallUUID, read_b);
-        //cout << syscallUUID << " 2 returned, size " << read_b << "\n";
+        ////cout << syscallUUID << " 2 returned, size " << read_b << "\n";
         return;
     }
 }
@@ -1707,6 +1708,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 if (find_internal_buffer(*estab_pidfd)) { // write
                     int ack_received = ack_num;
                     auto *ib = get_internal_buffer(*estab_pidfd);
+                    if (ib->second.find(ack_received) == ib->second.end()) {
+                        return;
+                    }
                     Packet *tmp_p = ib->second.find(ack_received)->second;
                     size_t tmp_size = tmp_p->getSize() - 54;
                     ib->second.erase(ack_received);
@@ -1714,38 +1718,38 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     if (find_blocked_uuid(*estab_pidfd)) {
                         auto *bu = get_blocked_uuid(*estab_pidfd);
                         auto *bp = get_blocked_packet(*estab_pidfd);
-                        if (!bu->empty()) {
+                       if (!bu->empty()) {
                             UUID cur_uuid = bu->front().first;
                             Packet *cur_packet = bp->find(cur_uuid)->second.front().second;
                             int expected_ack = bp->find(cur_uuid)->second.front().first;
-                            size_t cur_size = cur_packet->getSize() - 54;
+                          size_t cur_size = cur_packet->getSize() - 54;
                             while (ib->first + cur_size <= 51200) { // handle this to window size
                                 bp->find(cur_uuid)->second.pop_front();
                                 Packet *ib_packet = this->clonePacket(cur_packet);
                                 this->sendPacket("IPv4", cur_packet);
-                                ib->second.insert(make_pair(expected_ack, ib_packet));
+                             ib->second.insert(make_pair(expected_ack, ib_packet));
                                 ib->first = ib->first + cur_size;
                                 if (bp->find(cur_uuid)->second.empty()) {
                                     size_t return_size = bu->front().second;
-                                    returnSystemCall(cur_uuid, return_size);
+                                returnSystemCall(cur_uuid, return_size);
                                     bu->pop_front();
                                     bp->erase(cur_uuid);
                                 }
                                 if (bu->empty()) {
-                                    break;
+                               break;
                                 }
                                 cur_uuid = bu->front().first;
                                 cur_packet = bp->find(cur_uuid)->second.front().second;
-                                expected_ack = bp->find(cur_uuid)->second.front().first;
+                          expected_ack = bp->find(cur_uuid)->second.front().first;
                                 cur_size = cur_packet->getSize() - 54;
                             }
                         }
                     }
                 }
                 if (data_len > 0) { //read
-                    //cout << "DATA LENGTH IS " << data_len << "\n";
+                    ////cout << "DATA LENGTH IS " << data_len << "\n";
                     if (corrupted) { // packet corrupted
-                        //cout << "seq " << seq_num << " received --------------- corrupted\n";
+                        ////cout << "seq " << seq_num << " received --------------- corrupted\n";
                         if (!find_loss_max(*estab_pidfd)) {
                             deque<uint32_t> new_deq;
                             new_deq.push_back(seq_num);
@@ -1787,7 +1791,6 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                                     redundunt_flag = false;
                                     if (!search_deq->empty()) {
                                         uint32_t to_read_size = search_deq->front() - seq_num;
-                                        //cout << "read size is " << to_read_size << "\n";
                                         read_count_list[*estab_pidfd] = make_pair(to_read_size, true);
                                     } else {
                                         read_count_list[*estab_pidfd] = make_pair(0, false);
@@ -1797,7 +1800,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                         }
                         
                         if (new_flag) {
-                            //cout << "seq " << seq_num << " received --------------- new arrived\n";
+                            ////cout << "seq " << seq_num << " received --------------- new arrived\n";
                             for (unsigned int i = 0;i < data_len;i++) {
                                 uint8_t data;
                                 packet->readData(54 + i, &data, 1);
@@ -1828,14 +1831,14 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                                 }
                                 read_info_list.erase(*estab_pidfd);
                                 returnSystemCall(read_uuid, read_b);
-                                //cout << read_uuid << " 3 returned, size " << read_b << "\n";
+                                ////cout << read_uuid << " 3 returned, size " << read_b << "\n";
                             }
 
                            
                         }
 
                         if (resent_flag) {
-                            //cout << "seq " << seq_num << " received --------------- recovered\n";
+                            ////cout << "seq " << seq_num << " received --------------- recovered\n";
                             for (unsigned int i = 0;i < data_len;i++) {
                                 uint8_t data;
                                 packet->readData(54 + i, &data, 1);
@@ -1850,7 +1853,9 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
 
                                 size_t read_b = 0;
                                 deque<uint8_t> *read_buffer = &corrupted_buffer_list[*estab_pidfd];
-                                while (read_b < read_len) {
+                                size_t lim = read_count_list[*estab_pidfd].first;
+                                while ((read_b < read_len) &&
+                                        (read_b < lim)) {
                                     if (read_buffer->empty()) {
                                         break;
                                     }
@@ -1862,12 +1867,14 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                                 read_info_list.erase(*estab_pidfd);
                                 returnSystemCall(read_uuid, read_b);
                                 read_count_list[*estab_pidfd] = make_pair(read_count_list[*estab_pidfd].first - read_b, true);
-                                //cout << read_uuid << " 4 returned, size " << read_b << "\n";
+                                ////cout << "read size is " << read_count_list[*estab_pidfd].first << "\n";
+ 
+                                ////cout << read_uuid << " 4 returned, size " << read_b << "\n";
                             }
                         }
 
                         if (redundunt_flag) {
-                            //cout << "seq " << seq_num << " received --------------- redundunt\n";
+                            ////cout << "seq " << seq_num << " received --------------- redundunt\n";
                             // do nothing
                         }
                     }
@@ -1881,13 +1888,13 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     uint32_t new_ack_num;
                     auto *loss_deq = &get_loss_max(*estab_pidfd)->first;
                     auto cur_maximum = get_loss_max(*estab_pidfd)->second;
-                    //cout << loss_deq->front() << " " << cur_maximum << "\n";
+                    ////cout << loss_deq->front() << " " << cur_maximum << "\n";
                     if (loss_deq->empty()) {
                         new_ack_num = cur_maximum;
                     } else {
                         new_ack_num = loss_deq->front();
                     }
-                    //cout << "ack " << new_ack_num << " sent\n";  
+                    ////cout << "ack " << new_ack_num << " sent\n";  
                     ack_num = htonl(new_ack_num);
                     if (find_seq(*estab_pidfd)) {
                         seq_num = htonl(get_seq(*estab_pidfd)); // handle seq number later
@@ -2254,7 +2261,7 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                     svr_sock->state = "CLOSE_W";
                     this->sendPacket("IPv4", send);
                     returnSystemCall(read_info_list[temp_pidfd].first, -1);
-                    ////cout << "HEEEEEEEEERE\n";
+                    //////cout << "HEEEEEEEEERE\n";
                 } else {
                     this->freePacket(send);
                 }
