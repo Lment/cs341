@@ -1617,6 +1617,11 @@ void TCPAssignment::packetArrived(string fromModule, Packet* packet)
                 if (find_internal_buffer(*estab_pidfd)) {
                     int ack_received = ack_num;
                     auto *ib = get_internal_buffer(*estab_pidfd);
+                    if (ib->second.find(ack_received) == ib->second.end()) {
+                        this->freePacket(packet);
+                        this->freePacket(send);
+                        return;
+                    }
                     Packet *tmp_p = ib->second.find(ack_received)->second;
                     size_t tmp_size = tmp_p->getSize() - 54;
                     ib->second.erase(ack_received);
